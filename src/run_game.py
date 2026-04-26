@@ -456,8 +456,8 @@ def _run_ai_with_modal(game, screen, theme_index):
     t = threading.Thread(target=worker, daemon=True)
     start = time.monotonic()
     t.start()
-    # Skip the modal entirely for fast searches so it doesn't briefly flash.
-    t.join(0.25)
+    # Skip the modal entirely if the search finishes within 1 s.
+    t.join(1.0)
     if t.is_alive():
         show_thinking_modal(screen, game, theme_index, t, stop_event, start)
     if result["error"] is not None:
