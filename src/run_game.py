@@ -4,6 +4,7 @@ import json
 import re
 import sys
 import threading
+import time
 from pathlib import Path
 import os
 os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
@@ -453,65 +454,33 @@ def _run_ai_with_modal(game, screen, theme_index):
             result["error"] = exc
 
     t = threading.Thread(target=worker, daemon=True)
+    start = time.monotonic()
     t.start()
-    show_thinking_modal(screen, game, theme_index, t, stop_event)
+    # Skip the modal entirely for fast searches so it doesn't briefly flash.
+    t.join(0.25)
+    if t.is_alive():
+        show_thinking_modal(screen, game, theme_index, t, stop_event, start)
     if result["error"] is not None:
         raise result["error"]
     return result["move"]
 
-def _draw_spinner(screen, center, radius, theme, t_ms):
-    """CSS-style spinner: ring whose visible arc grows 0->360deg every 2s while
-    the whole ring rotates 360deg every 1s."""
-    import math
-    cx, cy = center
-    color = theme["text"]
-    thickness = max(3, int(round(radius * 5 / 24)))  # CSS: 5px border on 48px (radius 24)
-    rect = pygame.Rect(cx - radius, cy - radius, radius * 2, radius * 2)
-
-    t = t_ms / 1000.0
-    rotation = (t % 1.0) * 2 * math.pi          # full revolution per second (CSS clockwise)
-    sweep = (t % 2.0) / 2.0 * 2 * math.pi       # 0..2pi over 2s
-
-    if sweep <= 0.001:
-        return
-    # Convert CSS clockwise-from-top to pygame counterclockwise-from-3-o'clock.
-    css_start = rotation
-    css_end = rotation + sweep
-    py_start = math.pi / 2 - css_end
-    py_end = math.pi / 2 - css_start
-    pygame.draw.arc(screen, color, rect, py_start, py_end, thickness)
-
-def show_thinking_modal(screen, game, theme_index, thread, stop_event):
-    """Block until AI worker finishes. Thorpy modal with a spinner overlay."""
+def show_thinking_modal(screen, game, theme_index, thread, stop_event, start_time):
+    """Block until AI worker finishes. Thorpy modal with an elapsed-time counter."""
     from thorpy.elements import Button, Text, TitleBox
     _configure_thorpy_for_modal(screen, theme_index)
-    theme = get_theme(theme_index)
 
     def on_force_move():
         stop_event.set()
         tp.loops.quit_current_loop()
 
-    # Blank spacer reserves space the spinner is overdrawn into and also
-    # widens the modal so the Force move button has padding on either side.
-    spinner_spacer = Text("                              \n\n")
-    label = Text("Searching...")
+    # Pad the label with spaces so the modal is wide enough for the Force move button.
+    label = Text("Searching... 0.0s          ")
     force_btn = Button("Force move")
     force_btn.at_unclick = on_force_move
 
-    box = TitleBox("Thinking", children=[spinner_spacer, label, force_btn])
+    box = TitleBox("Thinking", children=[label, force_btn])
     box.center_on(screen)
     _make_modal_transparent(box)
-
-    # Wrap box.draw so the spinner is overdrawn each frame after the box renders.
-    _orig_draw = box.draw
-    def _draw_with_spinner(*args, **kwargs):
-        _orig_draw(*args, **kwargs)
-        spacer_rect = spinner_spacer.rect
-        # Smaller spinner with breathing room inside the spacer.
-        radius = max(10, min(spacer_rect.height, spacer_rect.width) // 2 - 12)
-        center = (spacer_rect.centerx, spacer_rect.centery)
-        _draw_spinner(screen, center, radius, theme, pygame.time.get_ticks())
-    box.draw = _draw_with_spinner
 
     _last_size = [screen.get_size()]
     def update_func():
@@ -519,6 +488,8 @@ def show_thinking_modal(screen, game, theme_index, thread, stop_event):
         if screen.get_size() != _last_size[0]:
             _last_size[0] = screen.get_size()
             box.center_on(screen)
+        elapsed = time.monotonic() - start_time
+        label.set_text(f"Searching... {elapsed:.1f}s")
         if not thread.is_alive():
             tp.loops.quit_current_loop()
 
