@@ -5,6 +5,8 @@ import re
 import sys
 import threading
 from pathlib import Path
+import os
+os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
 import pygame
 # thorpy is imported after pygame.init() in main() because it creates system
 # cursors at module-import time, which requires an active display on Linux.
