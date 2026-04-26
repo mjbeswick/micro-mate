@@ -1,0 +1,2 @@
+[console_scripts]
+micro-mate = run_game:main

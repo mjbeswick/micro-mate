@@ -1,0 +1,32 @@
+Metadata-Version: 2.4
+Name: micro-mate
+Version: 0.1.0
+Summary: Micro-Mate (Toledo) (Python + pygame)
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: pygame-ce>=2.5
+Requires-Dist: Pillow>=9.0
+Requires-Dist: cairosvg>=2.6
+Requires-Dist: chess>=1.10
+Requires-Dist: thorpy>=2.1
+Requires-Dist: numpy>=1.20
+
+# Micro-Mate (Toledo variant)
+
+Minimal skeleton for Toledo Micro-Mate using Python + pygame and SVG pieces.
+
+Run:
+- Desktop (macOS/Linux): python3 -m src.run_game
+- Raspberry Pi Zero (framebuffer): sudo SDL_VIDEODRIVER=fbcon SDL_FBDEV=/dev/fb0 python3 -m src.run_game
+
+Controls:
+- Left arrow: go backward
+- Right arrow: go forward
+- R: restart (press Y/Enter to confirm, N/Esc to cancel)
+- T: cycle board themes
+
+The current position highlights the last move's from-square and to-square.
+
+Game state is autosaved on exit to `~/.micro-mate/save-state.json` and restored on the next launch.
+
+Place SVG assets in assets/svg/ and run tools/rasterize_assets.py to generate PNGs for Pi packaging.
