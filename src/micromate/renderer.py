@@ -293,7 +293,7 @@ def draw_board(screen, board, piece_surfaces=None, last_move=None, theme_index=D
             pygame.draw.rect(screen, color, rect)
             piece = board.grid[r][c]
             if piece:
-                key = f"{piece.color}_{piece.kind}"
+                key = f"{piece.color}_{piece.kind.lower()}"
                 target_size = max(1, cell - padding)
                 surf = get_piece_surface(key, target_size)
                 if surf:
