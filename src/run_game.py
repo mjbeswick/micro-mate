@@ -491,8 +491,9 @@ def show_thinking_modal(screen, game, theme_index, thread, stop_event):
         stop_event.set()
         tp.loops.quit_current_loop()
 
-    # Blank spacer reserves space the spinner is overdrawn into.
-    spinner_spacer = Text("            \n\n")
+    # Blank spacer reserves space the spinner is overdrawn into and also
+    # widens the modal so the Force move button has padding on either side.
+    spinner_spacer = Text("                              \n\n")
     label = Text("Searching...")
     force_btn = Button("Force move")
     force_btn.at_unclick = on_force_move
