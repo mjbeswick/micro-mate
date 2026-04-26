@@ -755,6 +755,16 @@ def main(argv=None):
         _options["show_coords"] = args.coords
 
     pygame.init()
+    # Wrap set_cursor so unsupported system cursors (e.g. on Raspberry Pi / framebuffer)
+    # don't crash the app — thorpy calls this on every button hover.
+    _orig_set_cursor = pygame.mouse.set_cursor
+    def _safe_set_cursor(cursor):
+        try:
+            _orig_set_cursor(cursor)
+        except pygame.error:
+            pass
+    pygame.mouse.set_cursor = _safe_set_cursor  # type: ignore[method-assign]
+
     import thorpy as tp  # noqa: PLC0415 — must be after pygame.init() for Linux cursor support
     globals()['tp'] = tp
     base_window = max(200, args.window)
