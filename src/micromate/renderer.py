@@ -108,22 +108,29 @@ DEFAULT_THEME_INDEX = 0
 def get_theme(theme_index):
     return THEMES[theme_index % len(THEMES)]
 
+_font_cache: dict = {}
+
 def _get_font(size, bold=False):
+    key = (size, bold)
+    if key in _font_cache:
+        return _font_cache[key]
     if not pygame.font.get_init():
         try:
             pygame.font.init()
         except (pygame.error, ImportError, RuntimeError):
             return None
+    font = None
     try:
         font = pygame.font.SysFont(None, size, bold=bold)
-        if font is not None:
-            return font
     except (pygame.error, OSError, ImportError, NotImplementedError, RuntimeError):
         pass
-    try:
-        return pygame.font.Font(None, size)
-    except (pygame.error, OSError, ImportError, NotImplementedError, RuntimeError):
-        return None
+    if font is None:
+        try:
+            font = pygame.font.Font(None, size)
+        except (pygame.error, OSError, ImportError, NotImplementedError, RuntimeError):
+            pass
+    _font_cache[key] = font
+    return font
 
 _warned = set()
 
@@ -234,6 +241,8 @@ def pixel_to_square(screen_size, board, px, py, show_coords=False):
         return (row, col)
     return None
 
+_label_cache: dict = {}
+
 def _draw_coord_labels(screen, board, theme, cell, x0, y0, border):
     label_color = theme["subtext"]
     font = _get_font(max(12, int(border * 0.7)), bold=True)
@@ -242,7 +251,8 @@ def _draw_coord_labels(screen, board, theme, cell, x0, y0, border):
     rows, cols = board.rows, board.cols
     for c in range(cols):
         letter = chr(ord('a') + c)
-        label = font.render(letter, True, label_color)
+        lkey = (letter, font.size(letter)[1], label_color)
+        label = _label_cache.get(lkey) or _label_cache.setdefault(lkey, font.render(letter, True, label_color))
         cx = x0 + c * cell + cell // 2
         top_y = max(0, y0 - border // 2)
         bot_y = y0 + rows * cell + border // 2
@@ -250,7 +260,8 @@ def _draw_coord_labels(screen, board, theme, cell, x0, y0, border):
         screen.blit(label, label.get_rect(center=(cx, bot_y)))
     for r in range(rows):
         number = str(rows - r)
-        label = font.render(number, True, label_color)
+        lkey = (number, font.size(number)[1], label_color)
+        label = _label_cache.get(lkey) or _label_cache.setdefault(lkey, font.render(number, True, label_color))
         cy = y0 + r * cell + cell // 2
         left_x = max(0, x0 - border // 2)
         right_x = x0 + cols * cell + border // 2

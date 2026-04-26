@@ -214,14 +214,48 @@ class Board:
                         return True
         return False
 
+    def _ray_attacks(self, r: int, c: int, dr: int, dc: int, target_r: int, target_c: int) -> bool:
+        """Walk ray from (r,c) in direction (dr,dc); return True if target reached unobstructed."""
+        nr, nc = r + dr, c + dc
+        while 0 <= nr < self.rows and 0 <= nc < self.cols:
+            if nr == target_r and nc == target_c:
+                return True
+            if self.grid[nr][nc] is not None:
+                return False
+            nr += dr
+            nc += dc
+        return False
+
     def _can_piece_attack(self, r: int, c: int, target_r: int, target_c: int) -> bool:
         """Check if piece at (r,c) can attack (target_r, target_c)."""
         piece = self.grid[r][c]
         if not piece:
             return False
+        dr = target_r - r
+        dc = target_c - c
+        kind = piece.kind
 
-        moves = self._piece_moves(r, c)
-        return any(m.to_sq == (target_r, target_c) for m in moves)
+        if kind == 'P':
+            direction = -1 if piece.color == 'w' else 1
+            return dr == direction and abs(dc) == 1
+
+        if kind == 'N':
+            return (abs(dr), abs(dc)) in {(2, 1), (1, 2)}
+
+        if kind == 'K':
+            return max(abs(dr), abs(dc)) == 1
+
+        if kind in ('B', 'Q') and dr != 0 and abs(dr) == abs(dc):
+            if self._ray_attacks(r, c, 1 if dr > 0 else -1, 1 if dc > 0 else -1, target_r, target_c):
+                return True
+
+        if kind in ('R', 'Q') and (dr == 0 or dc == 0):
+            step_r = (1 if dr > 0 else -1) if dr != 0 else 0
+            step_c = (1 if dc > 0 else -1) if dc != 0 else 0
+            if self._ray_attacks(r, c, step_r, step_c, target_r, target_c):
+                return True
+
+        return False
 
     def _make_move_unsafe(self, move: Move) -> Optional[Piece]:
         """Make move without validation (for AI search). Returns captured piece."""
@@ -257,6 +291,7 @@ class AI:
         moves = board.legal_moves(color)
         if not moves:
             return None
+        moves.sort(key=lambda m: board.grid[m.to_sq[0]][m.to_sq[1]] is not None, reverse=True)
         best = moves[0]  # fallback so cancellation always yields something legal
         if color == 'w':
             best_score = float('-inf')
@@ -287,6 +322,7 @@ class AI:
             return self._evaluate(board)
         color = 'w' if is_maximizing else 'b'
         moves = board.legal_moves(color)
+        moves.sort(key=lambda m: board.grid[m.to_sq[0]][m.to_sq[1]] is not None, reverse=True)
         if not moves:
             if board._is_in_check(color):
                 return float('-inf') if is_maximizing else float('inf')
@@ -344,6 +380,8 @@ class Game:
         self._history_index = 0
         self.ai_depth = ai_depth
         self.ai = AI(depth=ai_depth)
+        self._king_check_sq: Optional[tuple] = None
+        self._king_check_valid = False
 
     def _clone_grid(self) -> List[List[Optional[Piece]]]:
         return [
@@ -360,6 +398,7 @@ class Game:
             for row in snapshot.grid
         ]
         self.turn = snapshot.turn
+        self._king_check_valid = False
 
     def record_position(self):
         if self._history_index < len(self._history) - 1:
@@ -411,6 +450,7 @@ class Game:
         self._history = [self._snapshot()]
         self._history_index = 0
         self.ai = AI(depth=self.ai_depth)
+        self._king_check_valid = False
 
     def get_legal_moves(self) -> List[Move]:
         """Get legal moves for current player."""
@@ -418,14 +458,17 @@ class Game:
 
     def get_king_check_square(self) -> Optional[tuple]:
         """Return the king's position if it's in check, None otherwise."""
-        if self.board._is_in_check(self.turn):
-            # Find and return king position
-            for r in range(self.board.rows):
-                for c in range(self.board.cols):
-                    piece = self.board.grid[r][c]
-                    if piece and piece.kind == "K" and piece.color == self.turn:
-                        return (r, c)
-        return None
+        if not self._king_check_valid:
+            self._king_check_sq = None
+            if self.board._is_in_check(self.turn):
+                for r in range(self.board.rows):
+                    for c in range(self.board.cols):
+                        piece = self.board.grid[r][c]
+                        if piece and piece.kind == "K" and piece.color == self.turn:
+                            self._king_check_sq = (r, c)
+                            break
+            self._king_check_valid = True
+        return self._king_check_sq
 
     def get_ai_move(self, stop_event=None) -> Optional[Move]:
         """Get AI's best move for current player. Cancellable via stop_event.
@@ -454,6 +497,7 @@ class Game:
             self.board.grid[r_to][c_to] = Piece(move.promotion, piece.color)
 
         self.turn = 'b' if self.turn == 'w' else 'w'
+        self._king_check_valid = False
         self.record_position()
         return True
 

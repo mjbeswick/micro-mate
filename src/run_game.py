@@ -51,10 +51,12 @@ _options = {
     "ai_enabled": True,
     "ai_depth": DEFAULT_AI_DEPTH,
     "show_coords": True,
+    "theme_index": DEFAULT_THEME_INDEX,
     "game_mode": "Human vs AI",
     "player_color": "White"
 }
 _toast = {"text": None, "until": 0}
+_toast_cache = {"text": None, "theme_index": None, "surface": None, "label_rect": None, "bg_rect": None}
 
 def _apply_thorpy_theme(theme_index):
     """Apply thorpy theme_game1 with colors from the chess theme."""
@@ -672,7 +674,7 @@ def load_options():
     try:
         saved_opts = json.loads(OPTIONS_PATH.read_text(encoding="utf-8"))
         # Only load supported keys
-        for key in ["show_coords", "ai_depth"]:
+        for key in ["show_coords", "ai_depth", "theme_index"]:
             if key in saved_opts:
                 _options[key] = saved_opts[key]
     except (OSError, ValueError, KeyError) as exc:
@@ -683,7 +685,7 @@ def save_options():
     try:
         OPTIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
         # Only save specific keys
-        opts_to_save = {k: _options[k] for k in ["show_coords", "ai_depth"]}
+        opts_to_save = {k: _options[k] for k in ["show_coords", "ai_depth", "theme_index"]}
         OPTIONS_PATH.write_text(json.dumps(opts_to_save, indent=2), encoding="utf-8")
     except (OSError, TypeError) as exc:
         pass  # Silently ignore errors
@@ -723,7 +725,7 @@ def _parse_args(argv):
 
 def _resolve_initial_theme(args):
     if args.theme is None:
-        return DEFAULT_THEME_INDEX
+        return _options.get("theme_index", DEFAULT_THEME_INDEX)
     for i, t in enumerate(THEMES):
         if t["name"].lower() == args.theme:
             return i
@@ -848,6 +850,7 @@ def main(argv=None):
                     awaiting_restart, should_quit, theme_index, selected_sq, cursor_sq, show_help = handle_keydown(
                         game, ev.key, awaiting_restart, theme_index, selected_sq, cursor_sq, show_help, unicode_char
                     )
+                    _options["theme_index"] = theme_index
                     if should_quit:
                         running = False
                 elif ev.type == pygame.MOUSEBUTTONDOWN:
@@ -903,17 +906,23 @@ def main(argv=None):
             if _toast["text"] and pygame.time.get_ticks() < _toast["until"]:
                 from micromate.renderer import _get_font
                 theme = get_theme(theme_index)
-                font = _get_font(20, bold=True)
-                if font:
-                    label = font.render(_toast["text"], True, theme["text"])
-                    pad_x, pad_y = 18, 10
-                    rect = pygame.Rect(0, 0, label.get_width() + 2 * pad_x, label.get_height() + 2 * pad_y)
-                    rect.midtop = (screen.get_width() // 2, 24)
-                    bg = pygame.Surface(rect.size, pygame.SRCALPHA)
-                    bg.fill((*theme["panel_fill"], 230))
-                    screen.blit(bg, rect.topleft)
-                    pygame.draw.rect(screen, theme["panel_border"], rect, 2, border_radius=10)
-                    screen.blit(label, label.get_rect(center=rect.center))
+                if (_toast_cache["text"] != _toast["text"] or _toast_cache["theme_index"] != theme_index):
+                    font = _get_font(20, bold=True)
+                    if font:
+                        label = font.render(_toast["text"], True, theme["text"])
+                        pad_x, pad_y = 18, 10
+                        rect = pygame.Rect(0, 0, label.get_width() + 2 * pad_x, label.get_height() + 2 * pad_y)
+                        rect.midtop = (screen.get_width() // 2, 24)
+                        bg = pygame.Surface(rect.size, pygame.SRCALPHA)
+                        bg.fill((*theme["panel_fill"], 230))
+                        pygame.draw.rect(bg, theme["panel_border"], bg.get_rect(), 2, border_radius=10)
+                        bg.blit(label, label.get_rect(center=bg.get_rect().center))
+                        _toast_cache["text"] = _toast["text"]
+                        _toast_cache["theme_index"] = theme_index
+                        _toast_cache["surface"] = bg
+                        _toast_cache["bg_rect"] = rect
+                if _toast_cache["surface"]:
+                    screen.blit(_toast_cache["surface"], _toast_cache["bg_rect"].topleft)
             pygame.display.flip()
             clock.tick(60)
     except KeyboardInterrupt:
