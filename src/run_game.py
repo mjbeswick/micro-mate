@@ -501,6 +501,16 @@ def show_thinking_modal(screen, game, theme_index, thread, stop_event):
     box.center_on(screen)
     _make_modal_transparent(box)
 
+    # Wrap box.draw so the spinner is overdrawn each frame after the box renders.
+    _orig_draw = box.draw
+    def _draw_with_spinner(*args, **kwargs):
+        _orig_draw(*args, **kwargs)
+        spacer_rect = spinner_spacer.rect
+        radius = max(14, min(spacer_rect.height, spacer_rect.width) // 2 - 4)
+        center = (spacer_rect.centerx, spacer_rect.centery)
+        _draw_spinner(screen, center, radius, theme, pygame.time.get_ticks())
+    box.draw = _draw_with_spinner
+
     _last_size = [screen.get_size()]
     def update_func():
         _draw_background_for_modal(screen, game, theme_index)
@@ -510,13 +520,7 @@ def show_thinking_modal(screen, game, theme_index, thread, stop_event):
         if not thread.is_alive():
             tp.loops.quit_current_loop()
 
-    def after_func():
-        spacer_rect = spinner_spacer.rect
-        radius = max(14, min(spacer_rect.height, spacer_rect.width) // 2 - 4)
-        center = (spacer_rect.centerx, spacer_rect.centery)
-        _draw_spinner(screen, center, radius, theme, pygame.time.get_ticks())
-
-    box.launch_alone(func_before=update_func, func_after=after_func)
+    box.launch_alone(func_before=update_func)
     thread.join()
 
 def attempt_move(game, selected_sq, to_sq, theme_index):
