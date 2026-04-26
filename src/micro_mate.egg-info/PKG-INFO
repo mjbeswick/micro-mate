@@ -11,7 +11,7 @@ Requires-Dist: chess>=1.10
 Requires-Dist: thorpy>=2.1
 Requires-Dist: numpy>=1.20
 
-# Micro-Mate (Toledo)
+# Micro-Mate
 
 A tiny chess engine and pygame UI inspired by the [Toledo Nanochess](http://nanochess.org/) family of minimal chess programs.
 
@@ -25,9 +25,13 @@ Supports 3×3, 4×4, 6×6, **8×8**, **10×10**, and **16×16** boards, five vis
 |---|---|
 | ![Classic theme](screenshots/theme_classic.png) | ![Midnight theme](screenshots/theme_midnight.png) |
 
-| Mid-game (Italian Opening) | 10×10 board |
+| New Game modal (Classic) | New Game modal (Midnight) |
 |---|---|
-| ![Mid-game](screenshots/midgame.png) | ![10x10](screenshots/board_10x10.png) |
+| ![New Game modal](screenshots/modal_new_game_classic.png) | ![New Game modal midnight](screenshots/modal_new_game_midnight.png) |
+
+| Checkmate modal | 10×10 board |
+|---|---|
+| ![Checkmate](screenshots/modal_checkmate_classic.png) | ![10x10](screenshots/board_10x10.png) |
 
 | 16×16 board |
 |---|

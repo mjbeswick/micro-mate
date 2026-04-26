@@ -6,7 +6,9 @@ import sys
 import threading
 from pathlib import Path
 import pygame
-import thorpy as tp
+# thorpy is imported after pygame.init() in main() because it creates system
+# cursors at module-import time, which requires an active display on Linux.
+tp = None  # populated in main()
 
 if __package__ == "src":
     from .micromate.engine import AI, Game, Move
@@ -751,6 +753,8 @@ def main(argv=None):
         _options["show_coords"] = args.coords
 
     pygame.init()
+    import thorpy as tp  # noqa: PLC0415 — must be after pygame.init() for Linux cursor support
+    globals()['tp'] = tp
     base_window = max(200, args.window)
     size = (base_window, base_window)
     screen = pygame.display.set_mode(size, pygame.RESIZABLE)

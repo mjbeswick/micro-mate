@@ -16,7 +16,12 @@ _CANDIDATE_SVG_DIRS = [
     os.path.join(_PKG_DIR, 'assets', 'svg'),
     os.path.join(_PKG_DIR, '..', '..', 'assets', 'svg'),
 ]
+_CANDIDATE_PNG_DIRS = [
+    os.path.join(_PKG_DIR, 'assets', 'png'),
+    os.path.join(_PKG_DIR, '..', '..', 'assets', 'png'),
+]
 ASSETS_SVG = next((p for p in _CANDIDATE_SVG_DIRS if os.path.isdir(p)), _CANDIDATE_SVG_DIRS[0])
+ASSETS_PNG = next((p for p in _CANDIDATE_PNG_DIRS if os.path.isdir(p)), _CANDIDATE_PNG_DIRS[0])
 THEMES = (
     {
         "name": "Classic",
@@ -148,19 +153,29 @@ def load_piece_surfaces():
     return {}
 
 def get_piece_surface(piece_key, size, cache={}):
-    """Get or render a piece surface at the specified size."""
+    """Get or render a piece surface at the specified size. SVG preferred, PNG fallback."""
     cache_key = (piece_key, size)
     if cache_key in cache:
         return cache[cache_key]
 
-    if not os.path.isdir(ASSETS_SVG):
-        return None
+    surface = None
 
-    svg_path = os.path.join(ASSETS_SVG, f"{piece_key}.svg")
-    if not os.path.isfile(svg_path):
-        return None
+    # Try SVG first (best quality at any size)
+    if os.path.isdir(ASSETS_SVG):
+        svg_path = os.path.join(ASSETS_SVG, f"{piece_key}.svg")
+        if os.path.isfile(svg_path):
+            surface = _render_svg_to_surface(svg_path, size, size)
 
-    surface = _render_svg_to_surface(svg_path, size, size)
+    # Fall back to bundled PNG (works without system libcairo)
+    if surface is None and os.path.isdir(ASSETS_PNG):
+        png_path = os.path.join(ASSETS_PNG, f"{piece_key}.png")
+        if os.path.isfile(png_path):
+            try:
+                img = pygame.image.load(png_path).convert_alpha()
+                surface = pygame.transform.smoothscale(img, (size, size))
+            except Exception:
+                pass
+
     if surface:
         cache[cache_key] = surface
     return surface
