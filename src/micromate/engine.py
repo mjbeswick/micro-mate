@@ -425,8 +425,12 @@ class Game:
         return None
 
     def get_ai_move(self, stop_event=None) -> Optional[Move]:
-        """Get AI's best move for current player. Cancellable via stop_event."""
-        return self.ai.best_move(self.board, self.turn, stop_event=stop_event)
+        """Get AI's best move for current player. Cancellable via stop_event.
+        Searches on a copy of the board so the live board isn't mutated
+        mid-search (which would cause visual glitches during rendering)."""
+        scratch = Board(self.board.rows, self.board.cols)
+        scratch.grid = self._clone_grid()
+        return self.ai.best_move(scratch, self.turn, stop_event=stop_event)
 
     def make_move(self, move: Move) -> bool:
         legal = self.board.legal_moves(self.turn)
