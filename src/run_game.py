@@ -491,8 +491,8 @@ def show_thinking_modal(screen, game, theme_index, thread, stop_event):
         stop_event.set()
         tp.loops.quit_current_loop()
 
-    # Wide blank spacer reserves square space the spinner is overdrawn into.
-    spinner_spacer = Text("                    \n\n\n")
+    # Blank spacer reserves space the spinner is overdrawn into.
+    spinner_spacer = Text("            \n\n")
     label = Text("Searching...")
     force_btn = Button("Force move")
     force_btn.at_unclick = on_force_move
@@ -506,7 +506,8 @@ def show_thinking_modal(screen, game, theme_index, thread, stop_event):
     def _draw_with_spinner(*args, **kwargs):
         _orig_draw(*args, **kwargs)
         spacer_rect = spinner_spacer.rect
-        radius = max(14, min(spacer_rect.height, spacer_rect.width) // 2 - 4)
+        # Smaller spinner with breathing room inside the spacer.
+        radius = max(10, min(spacer_rect.height, spacer_rect.width) // 2 - 12)
         center = (spacer_rect.centerx, spacer_rect.centery)
         _draw_spinner(screen, center, radius, theme, pygame.time.get_ticks())
     box.draw = _draw_with_spinner
