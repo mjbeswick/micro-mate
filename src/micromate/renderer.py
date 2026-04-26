@@ -1,8 +1,12 @@
 """Pygame renderer helper for micromate."""
 import os
 import io
+import sys
+import traceback
 import pygame
 from pathlib import Path
+
+_DEBUG_ASSETS = os.environ.get("MICROMATE_DEBUG_ASSETS") == "1"
 
 try:
     import cairosvg
@@ -121,13 +125,23 @@ def _get_font(size, bold=False):
     except (pygame.error, OSError, ImportError, NotImplementedError, RuntimeError):
         return None
 
+_warned = set()
+
+def _warn_once(key, msg):
+    if key in _warned:
+        return
+    _warned.add(key)
+    print(f"micro-mate: {msg}", file=sys.stderr)
+    if _DEBUG_ASSETS:
+        traceback.print_exc()
+
 def _render_svg_to_surface(svg_path, width, height):
     """Render SVG to pygame surface at specified size using cairosvg."""
     if cairosvg is None or Image is None:
+        _warn_once("svg-deps", "cairosvg/Pillow not importable; skipping SVG pieces")
         return None
 
     try:
-        # Render SVG to PNG bytes
         png_bytes = io.BytesIO()
         cairosvg.svg2png(
             url=str(svg_path),
@@ -137,15 +151,18 @@ def _render_svg_to_surface(svg_path, width, height):
         )
         png_bytes.seek(0)
 
-        # Convert PNG bytes to PIL Image, then to pygame Surface
         pil_img = Image.open(png_bytes).convert("RGBA")
         pygame_surface = pygame.image.fromstring(
             pil_img.tobytes("raw", "RGBA"),
             pil_img.size,
             "RGBA"
-        ).convert_alpha()
-        return pygame_surface
-    except Exception:
+        )
+        try:
+            return pygame_surface.convert_alpha()
+        except pygame.error:
+            return pygame_surface
+    except Exception as e:
+        _warn_once("svg-render", f"SVG render failed ({type(e).__name__}: {e}); falling back to PNG")
         return None
 
 def load_piece_surfaces():
@@ -167,14 +184,23 @@ def get_piece_surface(piece_key, size, cache={}):
             surface = _render_svg_to_surface(svg_path, size, size)
 
     # Fall back to bundled PNG (works without system libcairo)
-    if surface is None and os.path.isdir(ASSETS_PNG):
-        png_path = os.path.join(ASSETS_PNG, f"{piece_key}.png")
-        if os.path.isfile(png_path):
-            try:
-                img = pygame.image.load(png_path).convert_alpha()
-                surface = pygame.transform.smoothscale(img, (size, size))
-            except Exception:
-                pass
+    if surface is None:
+        if not os.path.isdir(ASSETS_PNG):
+            _warn_once("png-dir", f"PNG asset dir missing: {ASSETS_PNG} (reinstall: pipx install --force ~/Projects/micro-mate)")
+        else:
+            png_path = os.path.join(ASSETS_PNG, f"{piece_key}.png")
+            if not os.path.isfile(png_path):
+                _warn_once(f"png-missing-{piece_key}", f"PNG missing: {png_path}")
+            else:
+                try:
+                    img = pygame.image.load(png_path)
+                    try:
+                        img = img.convert_alpha()
+                    except pygame.error:
+                        pass
+                    surface = pygame.transform.smoothscale(img, (size, size))
+                except Exception as e:
+                    _warn_once(f"png-load-{piece_key}", f"PNG load failed for {png_path} ({type(e).__name__}: {e})")
 
     if surface:
         cache[cache_key] = surface
