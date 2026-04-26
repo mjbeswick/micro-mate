@@ -460,19 +460,26 @@ def _run_ai_with_modal(game, screen, theme_index):
     return result["move"]
 
 def _draw_spinner(screen, center, radius, theme, t_ms):
-    """Draw a rotating arc spinner."""
+    """CSS-style spinner: ring whose visible arc grows 0->360deg every 2s while
+    the whole ring rotates 360deg every 1s."""
     import math
     cx, cy = center
-    track_color = theme["panel_border"]
-    arc_color = theme["from_highlight"]
-    thickness = max(3, radius // 5)
+    color = theme["text"]
+    thickness = max(3, int(round(radius * 5 / 24)))  # CSS: 5px border on 48px (radius 24)
     rect = pygame.Rect(cx - radius, cy - radius, radius * 2, radius * 2)
-    pygame.draw.circle(screen, track_color, (cx, cy), radius, thickness)
-    # Rotating arc: ~270deg sweep, 1 rev per 1.1s
-    sweep = math.radians(270)
-    start = (-t_ms / 1100.0) * 2 * math.pi
-    end = start + sweep
-    pygame.draw.arc(screen, arc_color, rect, start, end, thickness)
+
+    t = t_ms / 1000.0
+    rotation = (t % 1.0) * 2 * math.pi          # full revolution per second (CSS clockwise)
+    sweep = (t % 2.0) / 2.0 * 2 * math.pi       # 0..2pi over 2s
+
+    if sweep <= 0.001:
+        return
+    # Convert CSS clockwise-from-top to pygame counterclockwise-from-3-o'clock.
+    css_start = rotation
+    css_end = rotation + sweep
+    py_start = math.pi / 2 - css_end
+    py_end = math.pi / 2 - css_start
+    pygame.draw.arc(screen, color, rect, py_start, py_end, thickness)
 
 def show_thinking_modal(screen, game, theme_index, thread, stop_event):
     """Block until AI worker finishes. Thorpy modal with a spinner overlay."""
