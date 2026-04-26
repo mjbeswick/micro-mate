@@ -97,22 +97,25 @@ class Board:
         moves = []
         direction = -1 if color == 'w' else 1
         new_r = r + direction
+        promo_rank = 0 if color == 'w' else self.rows - 1
 
         if 0 <= new_r < self.rows:
+            promo = "Q" if new_r == promo_rank else None
             if self.grid[new_r][c] is None:
-                moves.append(Move((r, c), (new_r, c)))
-                # Two-square advance from starting position
-                if (color == 'w' and r == self.rows - 2) or (color == 'b' and r == 1):
-                    two_sq_r = new_r + direction
-                    if 0 <= two_sq_r < self.rows and self.grid[two_sq_r][c] is None:
-                        moves.append(Move((r, c), (two_sq_r, c)))
+                moves.append(Move((r, c), (new_r, c), promotion=promo))
+                # Two-square advance from starting position (never a promotion rank)
+                if promo is None:
+                    if (color == 'w' and r == self.rows - 2) or (color == 'b' and r == 1):
+                        two_sq_r = new_r + direction
+                        if 0 <= two_sq_r < self.rows and self.grid[two_sq_r][c] is None:
+                            moves.append(Move((r, c), (two_sq_r, c)))
             # Captures
             for dc in [-1, 1]:
                 new_c = c + dc
                 if 0 <= new_c < self.cols:
                     target = self.grid[new_r][new_c]
                     if target and target.color != color:
-                        moves.append(Move((r, c), (new_r, new_c)))
+                        moves.append(Move((r, c), (new_r, new_c), promotion=promo))
         return moves
 
     def _knight_moves(self, r: int, c: int) -> List[Move]:
