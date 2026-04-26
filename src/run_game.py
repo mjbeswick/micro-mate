@@ -475,63 +475,41 @@ def _draw_spinner(screen, center, radius, theme, t_ms):
     pygame.draw.arc(screen, arc_color, rect, start, end, thickness)
 
 def show_thinking_modal(screen, game, theme_index, thread, stop_event):
-    """Block until worker thread finishes. Shows a spinner + Force move button."""
+    """Block until AI worker finishes. Thorpy modal with a spinner overlay."""
+    from thorpy.elements import Button, Text, TitleBox
+    _configure_thorpy_for_modal(screen, theme_index)
     theme = get_theme(theme_index)
-    clock = pygame.time.Clock()
 
-    def layout():
-        w, h = screen.get_size()
-        panel_w = max(220, min(w // 3, 320))
-        panel_h = max(180, min(h // 3, 220))
-        panel = pygame.Rect((w - panel_w) // 2, (h - panel_h) // 2, panel_w, panel_h)
-        spin_r = max(18, panel_h // 6)
-        spin_center = (panel.centerx, panel.top + panel_h // 2 - 16)
-        btn_w, btn_h = max(120, panel_w - 80), 36
-        btn = pygame.Rect(panel.centerx - btn_w // 2, panel.bottom - btn_h - 18, btn_w, btn_h)
-        return panel, spin_center, spin_r, btn
+    def on_force_move():
+        stop_event.set()
+        tp.loops.quit_current_loop()
 
-    font = pygame.font.SysFont(None, 22, bold=True)
-    small = pygame.font.SysFont(None, 18)
+    # Wide blank spacer reserves square space the spinner is overdrawn into.
+    spinner_spacer = Text("                    \n\n\n")
+    label = Text("Searching...")
+    force_btn = Button("Force move")
+    force_btn.at_unclick = on_force_move
 
-    while thread.is_alive():
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                stop_event.set()
-                pygame.event.post(event)
-                thread.join()
-                return
-            if event.type == pygame.KEYDOWN and event.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_ESCAPE):
-                stop_event.set()
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                _, _, _, btn = layout()
-                if btn.collidepoint(event.pos):
-                    stop_event.set()
+    box = TitleBox("Thinking", children=[spinner_spacer, label, force_btn])
+    box.center_on(screen)
+    _make_modal_transparent(box)
 
+    _last_size = [screen.get_size()]
+    def update_func():
         _draw_background_for_modal(screen, game, theme_index)
-        panel, spin_center, spin_r, btn = layout()
+        if screen.get_size() != _last_size[0]:
+            _last_size[0] = screen.get_size()
+            box.center_on(screen)
+        if not thread.is_alive():
+            tp.loops.quit_current_loop()
 
-        panel_surf = pygame.Surface(panel.size, pygame.SRCALPHA)
-        panel_surf.fill((*theme["panel_fill"], 230))
-        screen.blit(panel_surf, panel.topleft)
-        pygame.draw.rect(screen, theme["panel_border"], panel, 2, border_radius=10)
+    def after_func():
+        spacer_rect = spinner_spacer.rect
+        radius = max(14, min(spacer_rect.height, spacer_rect.width) // 2 - 4)
+        center = (spacer_rect.centerx, spacer_rect.centery)
+        _draw_spinner(screen, center, radius, theme, pygame.time.get_ticks())
 
-        title = font.render("Thinking", True, theme["text"])
-        screen.blit(title, (panel.centerx - title.get_width() // 2, panel.top + 14))
-
-        _draw_spinner(screen, spin_center, spin_r, theme, pygame.time.get_ticks())
-
-        # Force move button
-        mouse = pygame.mouse.get_pos()
-        hover = btn.collidepoint(mouse)
-        bg = (*theme["panel_border"], 255) if hover else (*theme["panel_fill"], 255)
-        pygame.draw.rect(screen, bg[:3], btn, border_radius=6)
-        pygame.draw.rect(screen, theme["panel_border"], btn, 1, border_radius=6)
-        label = small.render("Force move", True, theme["text"])
-        screen.blit(label, (btn.centerx - label.get_width() // 2, btn.centery - label.get_height() // 2))
-
-        pygame.display.flip()
-        clock.tick(60)
-
+    box.launch_alone(func_before=update_func, func_after=after_func)
     thread.join()
 
 def attempt_move(game, selected_sq, to_sq, theme_index):
