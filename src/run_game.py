@@ -685,7 +685,12 @@ def show_combat_roll_modal(screen, game, atk_piece, def_piece, atk_roll, def_rol
     ok_btn = Button(f"OK ({AUTO_HIDE_S})")
     ok_btn.at_unclick = lambda: tp.loops.quit_current_loop()
 
+    w, h = screen.get_size()
+    modal_w = max(280, min(360, int(min(w, h) * 0.45)))
+    modal_h = max(240, min(320, int(min(w, h) * 0.40)))
+
     box = TitleBox("Combat Roll!", children=[matchup, dice_row, result_text, ok_btn])
+    box.set_size((modal_w, modal_h))
     box.center_on(screen)
     _make_modal_transparent(box)
 
