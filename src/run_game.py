@@ -232,6 +232,12 @@ def show_new_game_modal(screen, theme_index, allow_cancel=False,
     coords_initial = 0 if _options["show_coords"] else 1
     coords_pool = TogglablesPool("", choices=coords_choices, initial_value=coords_initial)
     coords_group = Group([coords_label, coords_pool], "v")
+
+    dice_label = Text("Dice combat")
+    dice_choices = ["On", "Off"]
+    dice_initial = 0 if _options["dice_mode"] else 1
+    dice_pool = TogglablesPool("", choices=dice_choices, initial_value=dice_initial)
+    dice_group = Group([dice_label, dice_pool], "v")
     
     def on_start():
         size_val = size_pool.get_value()
@@ -261,14 +267,20 @@ def show_new_game_modal(screen, theme_index, allow_cancel=False,
             coords_enabled = coords_val == "Yes"
         else:
             coords_enabled = coords_val == 0
-        
+        dice_val = dice_pool.get_value()
+        if isinstance(dice_val, str):
+            dice_enabled = dice_val == "On"
+        else:
+            dice_enabled = dice_val == 0
+
         result["value"] = (
             sizes[size_idx_val][0],
             sizes[size_idx_val][1],
             depths[depth_idx_val],
             modes[mode_idx_val],
             colors[color_idx_val],
-            coords_enabled
+            coords_enabled,
+            dice_enabled,
         )
         tp.loops.quit_current_loop()
     
@@ -295,6 +307,7 @@ def show_new_game_modal(screen, theme_index, allow_cancel=False,
         mode_group,
         color_group,
         coords_group,
+        dice_group,
         spacer,
         buttons
     ]
@@ -784,11 +797,12 @@ def _create_via_modal(screen, theme_index, allow_cancel):
     )
     if result is None or result == "quit":
         return None
-    rows, cols, depth, mode, color, coords = result
+    rows, cols, depth, mode, color, coords, dice = result
     _options["ai_depth"] = depth
     _options["game_mode"] = mode
     _options["player_color"] = color
     _options["show_coords"] = coords
+    _options["dice_mode"] = dice
     return create_game_with_size(rows, cols)
 
 def save_game(game):
@@ -939,15 +953,19 @@ def main(argv=None):
         if result == "quit":
             return False
         if result is not None:
-            rows, cols, depth, mode, color, coords = result
+            rows, cols, depth, mode, color, coords, dice = result
             _options["ai_depth"] = depth
             _options["game_mode"] = mode
             _options["player_color"] = color
             _options["show_coords"] = coords
+            _options["dice_mode"] = dice
             game = create_game_with_size(rows, cols)
             selected_sq = None
             cursor_sq = None
             screen, size = _fit_window_to_board(screen, base_window, game.board)
+            pygame.display.set_caption(
+                'Micro-Mate [Dice]' if _options["dice_mode"] else 'Micro-Mate (Toledo)'
+            )
         return running
 
     running = True
