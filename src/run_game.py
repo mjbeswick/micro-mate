@@ -838,7 +838,7 @@ def load_options():
     try:
         saved_opts = json.loads(OPTIONS_PATH.read_text(encoding="utf-8"))
         # Only load supported keys
-        for key in ["show_coords", "ai_depth", "theme_index"]:
+        for key in ["show_coords", "ai_depth", "theme_index", "dice_mode"]:
             if key in saved_opts:
                 _options[key] = saved_opts[key]
     except (OSError, ValueError, KeyError) as exc:
@@ -849,7 +849,7 @@ def save_options():
     try:
         OPTIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
         # Only save specific keys
-        opts_to_save = {k: _options[k] for k in ["show_coords", "ai_depth", "theme_index"]}
+        opts_to_save = {k: _options[k] for k in ["show_coords", "ai_depth", "theme_index", "dice_mode"]}
         OPTIONS_PATH.write_text(json.dumps(opts_to_save, indent=2), encoding="utf-8")
     except (OSError, TypeError) as exc:
         pass  # Silently ignore errors
