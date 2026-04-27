@@ -387,6 +387,13 @@ def show_checkmate_modal(screen, theme_index, loser_color):
 
 HUMAN_COLOR = 'w'
 
+def _check_game_over(game, screen, theme_index):
+    """Show checkmate modal if the current player has no legal moves and is in check."""
+    if game.get_legal_moves():
+        return
+    if game.board._is_in_check(game.turn):
+        show_checkmate_modal(screen, theme_index, loser_color=game.turn)
+
 def _movable_squares(game):
     """Set of from-squares the current player can move from this turn."""
     return {m.from_sq for m in game.get_legal_moves()}
@@ -419,12 +426,31 @@ def _initial_cursor(game):
         return (game.board.rows - 1, 0)
     return min(movable)
 
+def _max_window_size():
+    """Return the usable desktop area, leaving room for OS chrome (menu bar, dock)."""
+    try:
+        desktops = pygame.display.get_desktop_sizes()
+        dw, dh = desktops[0] if desktops else (0, 0)
+        if dw > 0 and dh > 0:
+            return int(dw * 0.95), int(dh * 0.90)
+    except (pygame.error, AttributeError):
+        pass
+    return 9999, 9999
+
 def _fit_window_to_board(screen, base_size, board):
     """Resize the display so it tightly fits the board (no letterboxing)."""
     border_each = max(18, base_size // 28) if _options["show_coords"] else 0
     inner = max(80, base_size - 2 * border_each)
     cell = max(40, min(inner // board.cols, inner // board.rows))
-    target = (cell * board.cols + 2 * border_each, cell * board.rows + 2 * border_each)
+    target_w = cell * board.cols + 2 * border_each
+    target_h = cell * board.rows + 2 * border_each
+    max_w, max_h = _max_window_size()
+    if target_w > max_w or target_h > max_h:
+        cell = max(40, min((max_w - 2 * border_each) // board.cols,
+                           (max_h - 2 * border_each) // board.rows))
+        target_w = cell * board.cols + 2 * border_each
+        target_h = cell * board.rows + 2 * border_each
+    target = (target_w, target_h)
     if screen.get_size() != target:
         screen = pygame.display.set_mode(target, pygame.RESIZABLE)
     return screen, target
@@ -453,8 +479,12 @@ def apply_ai_move_if_needed(game, screen=None, theme_index=DEFAULT_THEME_INDEX):
             atk_piece = game.board.piece_at(ai_move.from_sq[0], ai_move.from_sq[1])
             proceed = _attempt_capture_with_dice(game, ai_move, atk_piece, dest_piece, screen, theme_index)
             if not proceed:
+                if screen is not None:
+                    _check_game_over(game, screen, theme_index)
                 return  # AI's capture was blocked or AI lost piece — turn consumed
     game.make_move(ai_move)
+    if screen is not None:
+        _check_game_over(game, screen, theme_index)
 
 def _run_ai_with_modal(game, screen, theme_index):
     stop_event = threading.Event()
@@ -598,6 +628,7 @@ def attempt_move(game, selected_sq, to_sq, theme_index):
         screen = pygame.display.get_surface()
         proceed = _attempt_capture_with_dice(game, move, piece, dest_piece, screen, theme_index)
         if not proceed:
+            _check_game_over(game, screen, theme_index)
             return None, to_sq  # blocked or attacker lost — turn consumed
         # Attacker won: fall through and execute the capture normally
         moved = game.make_move(move)
@@ -607,6 +638,7 @@ def attempt_move(game, selected_sq, to_sq, theme_index):
             return selected_sq, to_sq  # illegal: keep selection, move cursor
 
     screen = pygame.display.get_surface()
+    _check_game_over(game, screen, theme_index)
     apply_ai_move_if_needed(game, screen=screen, theme_index=theme_index)
     return None, to_sq  # clear selection, cursor stays at destination
 

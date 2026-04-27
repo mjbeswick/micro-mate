@@ -145,7 +145,8 @@ def _warn_once(key, msg):
 def _render_svg_to_surface(svg_path, width, height):
     """Render SVG to pygame surface at specified size using cairosvg."""
     if cairosvg is None or Image is None:
-        _warn_once("svg-deps", "cairosvg/Pillow not importable; skipping SVG pieces")
+        if _DEBUG_ASSETS:
+            _warn_once("svg-deps", "cairosvg/Pillow not importable; skipping SVG pieces")
         return None
 
     try:
