@@ -599,13 +599,15 @@ def show_combat_roll_modal(screen, game, atk_piece, def_piece, atk_roll, def_rol
     else:
         result_line = f"{def_label} defends — attacker lost!"
 
+    AUTO_HIDE_S = 3
+
     matchup = Text(f"{atk_label}  vs  {def_label}")
     atk_die = Image(_render_die_surface(atk_roll))
     vs_text = Text("vs")
     def_die = Image(_render_die_surface(def_roll))
     dice_row = Group([atk_die, vs_text, def_die], "h")
     result_text = Text(result_line)
-    ok_btn = Button("OK")
+    ok_btn = Button(f"OK ({AUTO_HIDE_S})")
     ok_btn.at_unclick = lambda: tp.loops.quit_current_loop()
 
     box = TitleBox("Combat Roll!", children=[matchup, dice_row, result_text, ok_btn])
@@ -613,13 +615,20 @@ def show_combat_roll_modal(screen, game, atk_piece, def_piece, atk_roll, def_rol
     _make_modal_transparent(box)
 
     _last_size = [screen.get_size()]
+    start_time = time.monotonic()
+
     def draw_bg():
         _draw_background_for_modal(screen, game, theme_index)
         if screen.get_size() != _last_size[0]:
             _last_size[0] = screen.get_size()
             box.center_on(screen)
+        remaining = AUTO_HIDE_S - (time.monotonic() - start_time)
+        if remaining <= 0:
+            tp.loops.quit_current_loop()
+        else:
+            ok_btn.set_text(f"OK ({int(remaining) + 1})")
 
-    box.launch_alone(func_before=draw_bg, click_outside_cancel=False)
+    box.launch_alone(func_before=draw_bg, click_outside_cancel=True)
 
 def _attempt_capture_with_dice(game, move, atk_piece, def_piece, screen, theme_index):
     """Roll dice for a capture in dice mode. Returns True if the caller should still
