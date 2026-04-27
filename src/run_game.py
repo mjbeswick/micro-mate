@@ -584,14 +584,13 @@ def _render_die_surface(value, size=80):
     return surf
 
 def show_combat_roll_modal(screen, game, atk_piece, def_piece, atk_roll, def_roll, outcome, theme_index):
-    """Single pygame loop: dice roll animation followed by result display with auto-dismiss."""
-    from micromate.renderer import get_theme
-    theme = get_theme(theme_index)
+    """Thorpy modal with animated dice (SingleStateImage supports set_image) and auto-dismiss."""
+    from thorpy.elements import TitleBox, Text, Button, SingleStateImage, Group
+    _configure_thorpy_for_modal(screen, theme_index)
 
     color_name = lambda p: 'White' if p.color == 'w' else 'Black'
     atk_label = f"{color_name(atk_piece)} {atk_piece.kind}"
     def_label = f"{color_name(def_piece)} {def_piece.kind}"
-    matchup_str = f"{atk_label}  vs  {def_label}"
 
     if outcome == 'blocked':
         result_line = "It's a tie — no capture!"
@@ -601,118 +600,57 @@ def show_combat_roll_modal(screen, game, atk_piece, def_piece, atk_roll, def_rol
         result_line = f"{def_label} defends — attacker lost!"
 
     ROLL_S = 0.8
-    AUTO_HIDE_S = 3.0
-    clock = pygame.time.Clock()
-    start = time.monotonic()
+    AUTO_HIDE_S = 3
 
-    while True:
-        elapsed = time.monotonic() - start
-        settled = elapsed >= ROLL_S
-        result_elapsed = elapsed - ROLL_S
+    matchup = Text(f"{atk_label}  vs  {def_label}")
+    atk_die = SingleStateImage(_render_die_surface(1))
+    vs_text = Text("vs")
+    def_die = SingleStateImage(_render_die_surface(1))
+    dice_row = Group([atk_die, vs_text, def_die], "h")
+    result_text = Text(" ")
+    ok_btn = Button("Rolling...")
+    ok_btn.at_unclick = lambda: tp.loops.quit_current_loop()
 
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                return
-            if event.type == pygame.KEYDOWN:
-                if not settled:
-                    start = time.monotonic() - ROLL_S  # skip to settled immediately
-                else:
-                    return
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                if not settled:
-                    start = time.monotonic() - ROLL_S
-                # button click handled below via rect hit-test
+    w, h = screen.get_size()
+    modal_w = max(280, min(360, int(min(w, h) * 0.45)))
+    modal_h = max(240, min(320, int(min(w, h) * 0.40)))
 
-        w, h = screen.get_size()
-        font_size = max(11, min(min(w, h) // 40, 18))
-        font = pygame.font.SysFont("arial", font_size)
-        title_font = pygame.font.SysFont("arial", max(14, font_size + 4), bold=True)
-        text_color = theme.get("text", (20, 20, 20))
-        panel_color = theme.get("panel_fill", (220, 220, 210))
+    box = TitleBox("Combat Roll!", children=[matchup, dice_row, result_text, ok_btn])
+    box.set_size((modal_w, modal_h))
+    box.center_on(screen)
+    _make_modal_transparent(box)
 
-        die_size = max(48, min(w, h) // 9)
-        gap = max(8, die_size // 4)
+    _last_size = [screen.get_size()]
+    start_time = time.monotonic()
+    settled = [False]
 
-        # Fixed panel size
-        panel_w = max(280, min(360, int(min(w, h) * 0.45)))
-        panel_h = max(240, min(320, int(min(w, h) * 0.40)))
-        px = (w - panel_w) // 2
-        py = (h - panel_h) // 2
+    def draw_bg():
+        _draw_background_for_modal(screen, game, theme_index)
+        if screen.get_size() != _last_size[0]:
+            _last_size[0] = screen.get_size()
+            box.center_on(screen)
 
-        # Dice values
-        if settled:
-            r1, r2 = atk_roll, def_roll
-        else:
+        elapsed = time.monotonic() - start_time
+
+        if elapsed < ROLL_S:
             t = elapsed / ROLL_S
             interval = 0.05 + 0.15 * t
             frame = int(elapsed / interval)
-            r1 = ((frame * 7 + 3) % 6) + 1
-            r2 = ((frame * 11 + 5) % 6) + 1
-
-        # Draw board + blur
-        _draw_background_for_modal(screen, game, theme_index)
-
-        # Panel background
-        panel_surf = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
-        r_px = max(4, panel_w // 20)
-        pygame.draw.rect(panel_surf, (*panel_color, 220), (0, 0, panel_w, panel_h), border_radius=r_px)
-        pygame.draw.rect(panel_surf, (*text_color, 160), (0, 0, panel_w, panel_h), width=2, border_radius=r_px)
-        screen.blit(panel_surf, (px, py))
-
-        pad = max(10, panel_w // 16)
-        cy = py + pad
-
-        # Title
-        title_surf = title_font.render("Combat Roll!", True, text_color)
-        screen.blit(title_surf, (px + (panel_w - title_surf.get_width()) // 2, cy))
-        cy += title_surf.get_height() + pad // 2
-
-        # Matchup
-        match_surf = font.render(matchup_str, True, text_color)
-        screen.blit(match_surf, (px + (panel_w - match_surf.get_width()) // 2, cy))
-        cy += match_surf.get_height() + pad
-
-        # Dice row
-        vs_surf = font.render("vs", True, text_color)
-        dice_row_w = die_size + gap + vs_surf.get_width() + gap + die_size
-        dice_x = px + (panel_w - dice_row_w) // 2
-        die1 = _render_die_surface(r1, die_size)
-        die2 = _render_die_surface(r2, die_size)
-        screen.blit(die1, (dice_x, cy))
-        screen.blit(vs_surf, (dice_x + die_size + gap, cy + (die_size - vs_surf.get_height()) // 2))
-        screen.blit(die2, (dice_x + die_size + gap + vs_surf.get_width() + gap, cy))
-        cy += die_size + pad
-
-        # Result text and OK button (only after roll settles)
-        if settled:
-            result_surf = font.render(result_line, True, text_color)
-            screen.blit(result_surf, (px + (panel_w - result_surf.get_width()) // 2, cy))
-            cy += result_surf.get_height() + pad // 2
-
-            remaining = AUTO_HIDE_S - result_elapsed
+            atk_die.set_image(_render_die_surface(((frame * 7 + 3) % 6) + 1))
+            def_die.set_image(_render_die_surface(((frame * 11 + 5) % 6) + 1))
+        else:
+            if not settled[0]:
+                atk_die.set_image(_render_die_surface(atk_roll))
+                def_die.set_image(_render_die_surface(def_roll))
+                result_text.set_text(result_line)
+                settled[0] = True
+            remaining = AUTO_HIDE_S - (elapsed - ROLL_S)
             if remaining <= 0:
-                break
-            btn_label = f"OK ({int(remaining) + 1})"
-            btn_surf = font.render(btn_label, True, text_color)
-            btn_w = btn_surf.get_width() + pad * 2
-            btn_h = btn_surf.get_height() + pad
-            btn_x = px + (panel_w - btn_w) // 2
-            btn_y = cy
-            btn_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
-            pygame.draw.rect(screen, panel_color, btn_rect, border_radius=4)
-            pygame.draw.rect(screen, text_color, btn_rect, width=1, border_radius=4)
-            screen.blit(btn_surf, (btn_x + pad, btn_y + pad // 2))
+                tp.loops.quit_current_loop()
+            else:
+                ok_btn.set_text(f"OK ({int(remaining) + 1})")
 
-            # Hit-test mouse click on OK or outside panel
-            for event in pygame.event.get(pygame.MOUSEBUTTONDOWN):
-                mx, my = event.pos
-                if btn_rect.collidepoint(mx, my) or not pygame.Rect(px, py, panel_w, panel_h).collidepoint(mx, my):
-                    pygame.event.clear(pygame.MOUSEBUTTONDOWN)
-                    pygame.display.flip()
-                    return
-
-        pygame.display.flip()
-        clock.tick(30)
+    box.launch_alone(func_before=draw_bg, click_outside_cancel=True)
 
 def _attempt_capture_with_dice(game, move, atk_piece, def_piece, screen, theme_index):
     """Roll dice for a capture in dice mode. Returns True if the caller should still
