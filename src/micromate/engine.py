@@ -543,6 +543,15 @@ class Game:
         self._king_check_valid = False
         self.record_position()
 
+    def skip_turn(self, move: Move) -> None:
+        """Combat result: attack blocked, no pieces change. Advances the turn."""
+        if self._history_index < len(self._history) - 1:
+            self.move_history = self.move_history[:self._history_index]
+        self.move_history.append(move)
+        self.turn = 'b' if self.turn == 'w' else 'w'
+        self._king_check_valid = False
+        self.record_position()
+
     # --- Serialisation helpers ---
 
     @staticmethod

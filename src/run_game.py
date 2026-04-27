@@ -632,7 +632,10 @@ def _attempt_capture_with_dice(game, move, atk_piece, def_piece, screen, theme_i
     if outcome == 'defender_wins':
         game.make_attacker_loss(move)
         return False
-    return outcome == 'attacker_wins'  # False if blocked
+    if outcome == 'blocked':
+        game.skip_turn(move)
+        return False
+    return True  # attacker_wins
 
 def attempt_move(game, selected_sq, to_sq, theme_index):
     """Try moving from selected_sq to to_sq. Returns (new_selected_sq, new_cursor_sq)."""
@@ -665,7 +668,8 @@ def attempt_move(game, selected_sq, to_sq, theme_index):
         proceed = _attempt_capture_with_dice(game, move, piece, dest_piece, screen, theme_index)
         if not proceed:
             _check_game_over(game, screen, theme_index)
-            return None, to_sq  # blocked or attacker lost — turn consumed
+            apply_ai_move_if_needed(game, screen=screen, theme_index=theme_index)
+            return None, to_sq
         # Attacker won: fall through and execute the capture normally
         moved = game.make_move(move)
     else:
