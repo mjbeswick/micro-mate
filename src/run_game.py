@@ -554,7 +554,7 @@ def show_thinking_modal(screen, game, theme_index, thread, stop_event, start_tim
 
 def _combat_outcome(atk_roll, def_roll):
     """Return 'blocked', 'attacker_wins', or 'defender_wins'."""
-    if atk_roll % 2 == 0 or atk_roll == def_roll:
+    if atk_roll == def_roll:
         return 'blocked'
     return 'attacker_wins' if atk_roll > def_roll else 'defender_wins'
 
@@ -584,7 +584,7 @@ def _render_die_surface(value, size=80):
     return surf
 
 def show_combat_roll_modal(screen, game, atk_piece, def_piece, atk_roll, def_roll, outcome, theme_index):
-    """Show combat roll result. Blocks until dismissed."""
+    """Show combat roll result with a rolling animation, then auto-dismiss."""
     from thorpy.elements import TitleBox, Text, Button, Image, Group
     _configure_thorpy_for_modal(screen, theme_index)
 
@@ -593,21 +593,22 @@ def show_combat_roll_modal(screen, game, atk_piece, def_piece, atk_roll, def_rol
     def_label = f"{color_name(def_piece)} {def_piece.kind}"
 
     if outcome == 'blocked':
-        result_line = "Attack blocked — no capture!" if atk_roll % 2 == 0 else "Draw — no capture!"
+        result_line = "It's a tie — no capture!"
     elif outcome == 'attacker_wins':
         result_line = f"{atk_label} wins the combat!"
     else:
         result_line = f"{def_label} defends — attacker lost!"
 
-    AUTO_HIDE_S = 3
+    ROLL_S = 0.8   # rolling animation duration
+    AUTO_HIDE_S = 3  # seconds to show result before dismissing
 
     matchup = Text(f"{atk_label}  vs  {def_label}")
-    atk_die = Image(_render_die_surface(atk_roll))
+    atk_die = Image(_render_die_surface(1))
     vs_text = Text("vs")
-    def_die = Image(_render_die_surface(def_roll))
+    def_die = Image(_render_die_surface(1))
     dice_row = Group([atk_die, vs_text, def_die], "h")
-    result_text = Text(result_line)
-    ok_btn = Button(f"OK ({AUTO_HIDE_S})")
+    result_text = Text(" ")  # blank until roll settles
+    ok_btn = Button("Rolling...")
     ok_btn.at_unclick = lambda: tp.loops.quit_current_loop()
 
     box = TitleBox("Combat Roll!", children=[matchup, dice_row, result_text, ok_btn])
@@ -616,17 +617,35 @@ def show_combat_roll_modal(screen, game, atk_piece, def_piece, atk_roll, def_rol
 
     _last_size = [screen.get_size()]
     start_time = time.monotonic()
+    settled = [False]
 
     def draw_bg():
         _draw_background_for_modal(screen, game, theme_index)
         if screen.get_size() != _last_size[0]:
             _last_size[0] = screen.get_size()
             box.center_on(screen)
-        remaining = AUTO_HIDE_S - (time.monotonic() - start_time)
-        if remaining <= 0:
-            tp.loops.quit_current_loop()
+
+        elapsed = time.monotonic() - start_time
+
+        if elapsed < ROLL_S:
+            # Slow down as we approach the end of the roll
+            interval = 0.05 + 0.15 * (elapsed / ROLL_S)
+            frame = int(elapsed / interval)
+            r1 = ((frame * 7 + 3) % 6) + 1
+            r2 = ((frame * 11 + 5) % 6) + 1
+            atk_die.set_image(_render_die_surface(r1))
+            def_die.set_image(_render_die_surface(r2))
         else:
-            ok_btn.set_text(f"OK ({int(remaining) + 1})")
+            if not settled[0]:
+                atk_die.set_image(_render_die_surface(atk_roll))
+                def_die.set_image(_render_die_surface(def_roll))
+                result_text.set_text(result_line)
+                settled[0] = True
+            remaining = (ROLL_S + AUTO_HIDE_S) - elapsed
+            if remaining <= 0:
+                tp.loops.quit_current_loop()
+            else:
+                ok_btn.set_text(f"OK ({int(remaining) + 1})")
 
     box.launch_alone(func_before=draw_bg, click_outside_cancel=True)
 
