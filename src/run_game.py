@@ -367,35 +367,29 @@ def show_new_game_modal(screen, theme_index, allow_cancel=False,
     
     return result["value"]
 
-def show_checkmate_modal(screen, theme_index, loser_color):
+def show_checkmate_modal(screen, game, theme_index, loser_color):
     """Display checkmate modal announcing the winner."""
-    from thorpy.elements import TitleBox, Text, Button, Group
+    from thorpy.elements import TitleBox, Text, Button
     _configure_thorpy_for_modal(screen, theme_index)
-    
+
     winner = "White" if loser_color == 'b' else "Black"
-    loser = "Black" if loser_color == 'b' else "White"
-    message = f"{winner} wins!\n{loser} is checkmated."
-    
-    msg_text = Text(message)
+    loser  = "Black" if loser_color == 'b' else "White"
+
+    msg_text = Text(f"{winner} wins!\n{loser} is checkmated.")
     ok_btn = Button("OK")
-    
-    def on_ok():
-        tp.loops.quit_current_loop()
-    
-    ok_btn.at_unclick = on_ok
-    
-    elements = [msg_text, ok_btn]
-    box = TitleBox("Checkmate", children=elements)
+    ok_btn.at_unclick = lambda: tp.loops.quit_current_loop()
+
+    box = TitleBox("Checkmate", children=[msg_text, ok_btn])
     box.center_on(screen)
     _make_modal_transparent(box)
 
     _last_size = [screen.get_size()]
     def draw_bg():
-        _draw_background_for_modal(screen, None, theme_index)
+        _draw_background_for_modal(screen, game, theme_index)
         if screen.get_size() != _last_size[0]:
             _last_size[0] = screen.get_size()
             box.center_on(screen)
-    
+
     box.launch_alone(func_before=draw_bg, click_outside_cancel=False)
 
 HUMAN_COLOR = 'w'
@@ -405,7 +399,7 @@ def _check_game_over(game, screen, theme_index):
     if game.get_legal_moves():
         return
     if game.board._is_in_check(game.turn):
-        show_checkmate_modal(screen, theme_index, loser_color=game.turn)
+        show_checkmate_modal(screen, game, theme_index, loser_color=game.turn)
 
 def _movable_squares(game):
     """Set of from-squares the current player can move from this turn."""
