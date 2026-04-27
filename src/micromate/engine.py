@@ -529,6 +529,20 @@ class Game:
         self.record_position()
         return True
 
+    def make_attacker_loss(self, move: Move) -> None:
+        """Combat result: attacker's piece is destroyed on its own square; defender stays.
+        Advances the turn and records a history snapshot."""
+        r_f, c_f = move.from_sq
+        piece = self.board.piece_at(r_f, c_f)
+        if piece:
+            self.board.bb[piece.color][piece.kind] &= ~self.board._bit(r_f, c_f)
+        if self._history_index < len(self._history) - 1:
+            self.move_history = self.move_history[:self._history_index]
+        self.move_history.append(move)
+        self.turn = 'b' if self.turn == 'w' else 'w'
+        self._king_check_valid = False
+        self.record_position()
+
     # --- Serialisation helpers ---
 
     @staticmethod

@@ -1,6 +1,7 @@
 """Entry point for Micro-Mate."""
 import argparse
 import json
+import random
 import re
 import sys
 import threading
@@ -53,7 +54,8 @@ _options = {
     "show_coords": True,
     "theme_index": DEFAULT_THEME_INDEX,
     "game_mode": "Human vs AI",
-    "player_color": "White"
+    "player_color": "White",
+    "dice_mode": False,
 }
 _toast = {"text": None, "until": 0}
 _toast_cache = {"text": None, "theme_index": None, "surface": None, "label_rect": None, "bg_rect": None}
@@ -131,6 +133,7 @@ def show_help_modal(screen, game, theme_index, selected_sq=None):
         ("+/-", "AI strength"),
         ("P", "Print PGN"),
         ("C", "Coords"),
+        ("B", "Dice combat mode"),
         ("?", "Close help"),
     ]
     
@@ -442,8 +445,16 @@ def apply_ai_move_if_needed(game, screen=None, theme_index=DEFAULT_THEME_INDEX):
         ai_move = game.get_ai_move()
     else:
         ai_move = _run_ai_with_modal(game, screen, theme_index)
-    if ai_move is not None:
-        game.make_move(ai_move)
+    if ai_move is None:
+        return
+    if _options["dice_mode"] and screen is not None:
+        dest_piece = game.board.piece_at(ai_move.to_sq[0], ai_move.to_sq[1])
+        if dest_piece is not None:
+            atk_piece = game.board.piece_at(ai_move.from_sq[0], ai_move.from_sq[1])
+            proceed = _attempt_capture_with_dice(game, ai_move, atk_piece, dest_piece, screen, theme_index)
+            if not proceed:
+                return  # AI's capture was blocked or AI lost piece — turn consumed
+    game.make_move(ai_move)
 
 def _run_ai_with_modal(game, screen, theme_index):
     stop_event = threading.Event()
@@ -498,6 +509,65 @@ def show_thinking_modal(screen, game, theme_index, thread, stop_event, start_tim
     box.launch_alone(func_before=update_func)
     thread.join()
 
+_DICE_FACES = ['', '⚀', '⚁', '⚂', '⚃', '⚄', '⚅']
+
+def _combat_outcome(atk_roll, def_roll):
+    """Return 'blocked', 'attacker_wins', or 'defender_wins'."""
+    if atk_roll % 2 == 0 or atk_roll == def_roll:
+        return 'blocked'
+    return 'attacker_wins' if atk_roll > def_roll else 'defender_wins'
+
+def show_combat_roll_modal(screen, atk_piece, def_piece, atk_roll, def_roll, outcome, theme_index):
+    """Show combat roll result. Blocks until dismissed."""
+    from thorpy.elements import TitleBox, Text, Button
+    _configure_thorpy_for_modal(screen, theme_index)
+
+    color_name = lambda p: 'White' if p.color == 'w' else 'Black'
+    atk_label = f"{color_name(atk_piece)} {atk_piece.kind}"
+    def_label = f"{color_name(def_piece)} {def_piece.kind}"
+
+    if outcome == 'blocked':
+        result_line = "Attack blocked — no capture!" if atk_roll % 2 == 0 else "Draw — no capture!"
+    elif outcome == 'attacker_wins':
+        result_line = f"{atk_label} wins the combat!"
+    else:
+        result_line = f"{def_label} defends — attacker lost!"
+
+    body = (
+        f"{atk_label} attacks {def_label}\n\n"
+        f"  {_DICE_FACES[atk_roll]} {atk_roll}  vs  {def_roll} {_DICE_FACES[def_roll]}\n\n"
+        f"{result_line}"
+    )
+    msg = Text(body)
+    ok_btn = Button("OK")
+    ok_btn.at_unclick = lambda: tp.loops.quit_current_loop()
+
+    box = TitleBox("Combat Roll!", children=[msg, ok_btn])
+    box.center_on(screen)
+    _make_modal_transparent(box)
+
+    _last_size = [screen.get_size()]
+    def draw_bg():
+        _draw_background_for_modal(screen, None, theme_index)
+        if screen.get_size() != _last_size[0]:
+            _last_size[0] = screen.get_size()
+            box.center_on(screen)
+
+    box.launch_alone(func_before=draw_bg, click_outside_cancel=False)
+
+def _attempt_capture_with_dice(game, move, atk_piece, def_piece, screen, theme_index):
+    """Roll dice for a capture in dice mode. Returns True if the caller should still
+    execute the move normally (attacker wins), False otherwise."""
+    atk_roll = random.randint(1, 6)
+    def_roll = random.randint(1, 6)
+    outcome = _combat_outcome(atk_roll, def_roll)
+    if screen is not None:
+        show_combat_roll_modal(screen, atk_piece, def_piece, atk_roll, def_roll, outcome, theme_index)
+    if outcome == 'defender_wins':
+        game.make_attacker_loss(move)
+        return False
+    return outcome == 'attacker_wins'  # False if blocked
+
 def attempt_move(game, selected_sq, to_sq, theme_index):
     """Try moving from selected_sq to to_sq. Returns (new_selected_sq, new_cursor_sq)."""
     if selected_sq == to_sq:
@@ -517,9 +587,25 @@ def attempt_move(game, selected_sq, to_sq, theme_index):
            (piece.color == 'b' and to_sq[0] == board.rows - 1):
             promotion = "Q"
 
-    moved = game.make_move(Move(from_sq=selected_sq, to_sq=to_sq, promotion=promotion))
-    if not moved:
-        return selected_sq, to_sq  # illegal: keep selection, move cursor
+    move = Move(from_sq=selected_sq, to_sq=to_sq, promotion=promotion)
+
+    # Dice mode: intercept captures before they happen
+    if _options["dice_mode"] and dest_piece is not None:
+        # Validate legality first (so illegal moves still bounce back silently)
+        legal = board.legal_moves(game.turn)
+        if not any(m.from_sq == move.from_sq and m.to_sq == move.to_sq for m in legal):
+            return selected_sq, to_sq
+        screen = pygame.display.get_surface()
+        proceed = _attempt_capture_with_dice(game, move, piece, dest_piece, screen, theme_index)
+        if not proceed:
+            return None, to_sq  # blocked or attacker lost — turn consumed
+        # Attacker won: fall through and execute the capture normally
+        moved = game.make_move(move)
+    else:
+        moved = game.make_move(move)
+        if not moved:
+            return selected_sq, to_sq  # illegal: keep selection, move cursor
+
     screen = pygame.display.get_surface()
     apply_ai_move_if_needed(game, screen=screen, theme_index=theme_index)
     return None, to_sq  # clear selection, cursor stays at destination
@@ -578,6 +664,15 @@ def handle_keydown(game, key, awaiting_restart, theme_index, selected_sq, cursor
         game.ai = AI(depth=_options["ai_depth"])
         _set_toast(f"AI strength: L{_options['ai_depth']} ({_strength_label(_options['ai_depth'])})")
         return False, False, theme_index, selected_sq, cursor_sq, False
+    if key == pygame.K_b:
+        _options["dice_mode"] = not _options["dice_mode"]
+        state = "ON" if _options["dice_mode"] else "OFF"
+        _set_toast(f"Dice mode {state}")
+        pygame.display.set_caption(
+            'Micro-Mate [Dice]' if _options["dice_mode"] else 'Micro-Mate (Toledo)'
+        )
+        return False, False, theme_index, selected_sq, cursor_sq, False
+
     if key == pygame.K_p:
         pgn = export_pgn(game)
         if pgn is None:
