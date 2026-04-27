@@ -583,10 +583,82 @@ def _render_die_surface(value, size=80):
         pygame.draw.circle(surf, dot_color, (cx, cy), dot_r)
     return surf
 
+def _run_dice_roll_animation(screen, game, atk_label, def_label, theme_index, duration=0.8):
+    """Blocking pygame loop showing dice spinning before the result modal."""
+    from micromate.renderer import get_theme
+    theme = get_theme(theme_index)
+    w, h = screen.get_size()
+    font_size = max(11, min(min(w, h) // 40, 18))
+    font = pygame.font.SysFont("arial", font_size)
+    title_font = pygame.font.SysFont("arial", max(14, font_size + 4), bold=True)
+    text_color = theme.get("text", (20, 20, 20))
+    panel_color = theme.get("panel_fill", (220, 220, 210))
+
+    die_size = max(48, min(w, h) // 9)
+    gap = max(8, die_size // 4)
+    matchup_str = f"{atk_label}  vs  {def_label}"
+
+    clock = pygame.time.Clock()
+    start = time.monotonic()
+
+    while True:
+        elapsed = time.monotonic() - start
+        if elapsed >= duration:
+            break
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return
+            if event.type in (pygame.MOUSEBUTTONDOWN, pygame.KEYDOWN):
+                return  # allow skipping the animation
+
+        # Pseudo-random but deterministic per-frame dice values (slows near end)
+        t = elapsed / duration
+        interval = 0.05 + 0.15 * t
+        frame = int(elapsed / interval)
+        r1 = ((frame * 7 + 3) % 6) + 1
+        r2 = ((frame * 11 + 5) % 6) + 1
+
+        _draw_background_for_modal(screen, game, theme_index)
+
+        # Panel dimensions
+        vs_surf = font.render("vs", True, text_color)
+        dice_row_w = die_size + gap + vs_surf.get_width() + gap + die_size
+        inner_w = max(dice_row_w, font.size(matchup_str)[0] + 20)
+        panel_w = inner_w + 40
+        panel_h = title_font.get_height() + 12 + font.get_height() + 12 + die_size + 16
+        px = (w - panel_w) // 2
+        py = (h - panel_h) // 2
+
+        panel_surf = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
+        r_px = max(4, panel_w // 20)
+        pygame.draw.rect(panel_surf, (*panel_color, 220), (0, 0, panel_w, panel_h), border_radius=r_px)
+        pygame.draw.rect(panel_surf, (*text_color, 160), (0, 0, panel_w, panel_h), width=2, border_radius=r_px)
+        screen.blit(panel_surf, (px, py))
+
+        cy = py + 8
+        title_surf = title_font.render("Combat Roll!", True, text_color)
+        screen.blit(title_surf, (px + (panel_w - title_surf.get_width()) // 2, cy))
+        cy += title_surf.get_height() + 8
+
+        match_surf = font.render(matchup_str, True, text_color)
+        screen.blit(match_surf, (px + (panel_w - match_surf.get_width()) // 2, cy))
+        cy += match_surf.get_height() + 10
+
+        die1 = _render_die_surface(r1, die_size)
+        die2 = _render_die_surface(r2, die_size)
+        dice_row_x = px + (panel_w - dice_row_w) // 2
+        screen.blit(die1, (dice_row_x, cy))
+        screen.blit(vs_surf, (dice_row_x + die_size + gap, cy + (die_size - vs_surf.get_height()) // 2))
+        screen.blit(die2, (dice_row_x + die_size + gap + vs_surf.get_width() + gap, cy))
+
+        pygame.display.flip()
+        clock.tick(30)
+
+
 def show_combat_roll_modal(screen, game, atk_piece, def_piece, atk_roll, def_roll, outcome, theme_index):
-    """Show combat roll result with a rolling animation, then auto-dismiss."""
+    """Animate dice rolling, then show the result with auto-dismiss."""
     from thorpy.elements import TitleBox, Text, Button, Image, Group
-    _configure_thorpy_for_modal(screen, theme_index)
 
     color_name = lambda p: 'White' if p.color == 'w' else 'Black'
     atk_label = f"{color_name(atk_piece)} {atk_piece.kind}"
@@ -599,16 +671,18 @@ def show_combat_roll_modal(screen, game, atk_piece, def_piece, atk_roll, def_rol
     else:
         result_line = f"{def_label} defends — attacker lost!"
 
-    ROLL_S = 0.8   # rolling animation duration
-    AUTO_HIDE_S = 3  # seconds to show result before dismissing
+    _run_dice_roll_animation(screen, game, atk_label, def_label, theme_index)
+
+    AUTO_HIDE_S = 3
+    _configure_thorpy_for_modal(screen, theme_index)
 
     matchup = Text(f"{atk_label}  vs  {def_label}")
-    atk_die = Image(_render_die_surface(1))
+    atk_die = Image(_render_die_surface(atk_roll))
     vs_text = Text("vs")
-    def_die = Image(_render_die_surface(1))
+    def_die = Image(_render_die_surface(def_roll))
     dice_row = Group([atk_die, vs_text, def_die], "h")
-    result_text = Text(" ")  # blank until roll settles
-    ok_btn = Button("Rolling...")
+    result_text = Text(result_line)
+    ok_btn = Button(f"OK ({AUTO_HIDE_S})")
     ok_btn.at_unclick = lambda: tp.loops.quit_current_loop()
 
     box = TitleBox("Combat Roll!", children=[matchup, dice_row, result_text, ok_btn])
@@ -617,35 +691,17 @@ def show_combat_roll_modal(screen, game, atk_piece, def_piece, atk_roll, def_rol
 
     _last_size = [screen.get_size()]
     start_time = time.monotonic()
-    settled = [False]
 
     def draw_bg():
         _draw_background_for_modal(screen, game, theme_index)
         if screen.get_size() != _last_size[0]:
             _last_size[0] = screen.get_size()
             box.center_on(screen)
-
-        elapsed = time.monotonic() - start_time
-
-        if elapsed < ROLL_S:
-            # Slow down as we approach the end of the roll
-            interval = 0.05 + 0.15 * (elapsed / ROLL_S)
-            frame = int(elapsed / interval)
-            r1 = ((frame * 7 + 3) % 6) + 1
-            r2 = ((frame * 11 + 5) % 6) + 1
-            atk_die.set_image(_render_die_surface(r1))
-            def_die.set_image(_render_die_surface(r2))
+        remaining = AUTO_HIDE_S - (time.monotonic() - start_time)
+        if remaining <= 0:
+            tp.loops.quit_current_loop()
         else:
-            if not settled[0]:
-                atk_die.set_image(_render_die_surface(atk_roll))
-                def_die.set_image(_render_die_surface(def_roll))
-                result_text.set_text(result_line)
-                settled[0] = True
-            remaining = (ROLL_S + AUTO_HIDE_S) - elapsed
-            if remaining <= 0:
-                tp.loops.quit_current_loop()
-            else:
-                ok_btn.set_text(f"OK ({int(remaining) + 1})")
+            ok_btn.set_text(f"OK ({int(remaining) + 1})")
 
     box.launch_alone(func_before=draw_bg, click_outside_cancel=True)
 
