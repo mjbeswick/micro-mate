@@ -1,4 +1,0 @@
-pygame-ce>=2.5
-Pillow>=9.0
-cairosvg>=2.6
-chess>=1.10

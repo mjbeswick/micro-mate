@@ -1,9 +1,0 @@
-__pycache__/
-venv/
-dist/
-build/
-*.pyc
-.DS_Store
-assets/png/
-.venv/
-PLAN.md

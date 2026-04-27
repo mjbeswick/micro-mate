@@ -4,12 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Run, install, iterate
 
-The project ships as a `pipx`-installable app. The entry point `micro-mate` is declared in `pyproject.toml` as `run_game:main`.
+The project is installed as a tool via `uv`. The entry point `micro-mate` is declared in `pyproject.toml` as `run_game:main`.
 
-- Iterate fast: `pipx install --force ~/Projects/micro-mate` (then run `micro-mate`). Editable installs against the bare pyproject (`-e ./pyproject.toml`) do not work — pass the project directory.
-- Run from a checkout without installing: `python3 -m src.run_game` from the repo root.
+- Iterate fast: `uv tool install --force ~/Projects/micro-mate` (then run `micro-mate`). Editable installs against the bare pyproject do not work — pass the project directory.
+- Run from a checkout without installing: `uv run python -m src.run_game` from the repo root.
 - Useful CLI flags: `--size RxC` (e.g. `8x8`, `5x6`, `4x4`), `--ai-depth 1..5`, `--no-ai`, `--theme NAME`, `--coords`, `--pgn FILE` (`-` for stdin), `--print-pgn`, `--new`. A bare positional integer is the square window size in pixels (default 720).
-- Headless smoke tests: `SDL_VIDEODRIVER=dummy /Users/michael/.local/pipx/venvs/micro-mate/bin/python -c "..."` is the established way to exercise renderer / modal code without opening a window. There is no test suite — verify with one-off scripts and direct gameplay.
+- Headless smoke tests: `SDL_VIDEODRIVER=dummy /Users/michael/.local/share/uv/tools/micro-mate/bin/python -c "..."` is the established way to exercise renderer / modal code without opening a window. There is no test suite — verify with one-off scripts and direct gameplay.
 
 There is no linter, formatter, or test runner configured. Don't add one without asking.
 
