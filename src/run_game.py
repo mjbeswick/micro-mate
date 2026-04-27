@@ -620,9 +620,16 @@ def show_combat_roll_modal(screen, game, atk_piece, def_piece, atk_roll, def_rol
 
     def draw_bg():
         _draw_background_for_modal(screen, game, theme_index)
-        if screen.get_size() != _last_size[0]:
-            _last_size[0] = screen.get_size()
+        cur_size = screen.get_size()
+        if cur_size != _last_size[0]:
+            _last_size[0] = cur_size
+            w2, h2 = cur_size
+            new_w = max(280, min(360, int(min(w2, h2) * 0.45)))
+            new_h = max(240, min(320, int(min(w2, h2) * 0.40)))
+            box.set_size((new_w, new_h))
             box.center_on(screen)
+        else:
+            box.set_size((modal_w, modal_h))
 
         elapsed = time.monotonic() - start_time
 
