@@ -11,7 +11,7 @@ _DEBUG_ASSETS = os.environ.get("MICROMATE_DEBUG_ASSETS") == "1"
 try:
     import cairosvg
     from PIL import Image
-except ImportError:
+except (ImportError, OSError):
     cairosvg = None
     Image = None
 
