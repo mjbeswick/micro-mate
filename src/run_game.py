@@ -504,13 +504,13 @@ def attempt_move(game, selected_sq, to_sq, theme_index):
         return None, to_sq  # deselect
 
     board = game.board
-    dest_piece = board.grid[to_sq[0]][to_sq[1]]
+    dest_piece = board.piece_at(to_sq[0], to_sq[1])
     # Re-select if clicking another friendly piece
     if dest_piece is not None and dest_piece.color == game.turn:
         return to_sq, to_sq
 
     # Auto-promote pawn to queen
-    piece = board.grid[selected_sq[0]][selected_sq[1]]
+    piece = board.piece_at(selected_sq[0], selected_sq[1])
     promotion = None
     if piece is not None and piece.kind == "P":
         if (piece.color == 'w' and to_sq[0] == 0) or \

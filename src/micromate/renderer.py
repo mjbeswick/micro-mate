@@ -302,7 +302,7 @@ def draw_board(screen, board, piece_surfaces=None, last_move=None, theme_index=D
             rect = pygame.Rect(x0 + c*cell, y0 + r*cell, cell, cell)
             color = colors[(r+c)%2]
             pygame.draw.rect(screen, color, rect)
-            piece = board.grid[r][c]
+            piece = board.piece_at(r, c)
             if piece:
                 key = f"{piece.color}_{piece.kind.lower()}"
                 target_size = max(1, cell - padding)
