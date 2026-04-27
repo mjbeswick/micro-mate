@@ -552,17 +552,40 @@ def show_thinking_modal(screen, game, theme_index, thread, stop_event, start_tim
     box.launch_alone(func_before=update_func)
     thread.join()
 
-_DICE_FACES = ['', '⚀', '⚁', '⚂', '⚃', '⚄', '⚅']
-
 def _combat_outcome(atk_roll, def_roll):
     """Return 'blocked', 'attacker_wins', or 'defender_wins'."""
     if atk_roll % 2 == 0 or atk_roll == def_roll:
         return 'blocked'
     return 'attacker_wins' if atk_roll > def_roll else 'defender_wins'
 
-def show_combat_roll_modal(screen, atk_piece, def_piece, atk_roll, def_roll, outcome, theme_index):
+# Dot positions for each die face: list of (cx, cy) as fractions of die size
+_DICE_DOTS = {
+    1: [(0.5, 0.5)],
+    2: [(0.25, 0.25), (0.75, 0.75)],
+    3: [(0.25, 0.25), (0.5, 0.5), (0.75, 0.75)],
+    4: [(0.25, 0.25), (0.75, 0.25), (0.25, 0.75), (0.75, 0.75)],
+    5: [(0.25, 0.25), (0.75, 0.25), (0.5, 0.5), (0.25, 0.75), (0.75, 0.75)],
+    6: [(0.25, 0.25), (0.75, 0.25), (0.25, 0.5), (0.75, 0.5), (0.25, 0.75), (0.75, 0.75)],
+}
+
+def _render_die_surface(value, size=80):
+    """Return a pygame Surface showing a die face for the given value."""
+    surf = pygame.Surface((size, size), pygame.SRCALPHA)
+    bg = (248, 248, 248)
+    border = (60, 60, 60)
+    dot_color = (30, 30, 30)
+    radius = size // 8
+    pygame.draw.rect(surf, bg, (0, 0, size, size), border_radius=radius)
+    pygame.draw.rect(surf, border, (0, 0, size, size), width=2, border_radius=radius)
+    dot_r = max(4, size // 10)
+    for fx, fy in _DICE_DOTS.get(value, []):
+        cx, cy = int(fx * size), int(fy * size)
+        pygame.draw.circle(surf, dot_color, (cx, cy), dot_r)
+    return surf
+
+def show_combat_roll_modal(screen, game, atk_piece, def_piece, atk_roll, def_roll, outcome, theme_index):
     """Show combat roll result. Blocks until dismissed."""
-    from thorpy.elements import TitleBox, Text, Button
+    from thorpy.elements import TitleBox, Text, Button, Image, Group
     _configure_thorpy_for_modal(screen, theme_index)
 
     color_name = lambda p: 'White' if p.color == 'w' else 'Black'
@@ -576,22 +599,22 @@ def show_combat_roll_modal(screen, atk_piece, def_piece, atk_roll, def_roll, out
     else:
         result_line = f"{def_label} defends — attacker lost!"
 
-    body = (
-        f"{atk_label} attacks {def_label}\n\n"
-        f"  {_DICE_FACES[atk_roll]} {atk_roll}  vs  {def_roll} {_DICE_FACES[def_roll]}\n\n"
-        f"{result_line}"
-    )
-    msg = Text(body)
+    matchup = Text(f"{atk_label}  vs  {def_label}")
+    atk_die = Image(_render_die_surface(atk_roll))
+    vs_text = Text("vs")
+    def_die = Image(_render_die_surface(def_roll))
+    dice_row = Group([atk_die, vs_text, def_die], "h")
+    result_text = Text(result_line)
     ok_btn = Button("OK")
     ok_btn.at_unclick = lambda: tp.loops.quit_current_loop()
 
-    box = TitleBox("Combat Roll!", children=[msg, ok_btn])
+    box = TitleBox("Combat Roll!", children=[matchup, dice_row, result_text, ok_btn])
     box.center_on(screen)
     _make_modal_transparent(box)
 
     _last_size = [screen.get_size()]
     def draw_bg():
-        _draw_background_for_modal(screen, None, theme_index)
+        _draw_background_for_modal(screen, game, theme_index)
         if screen.get_size() != _last_size[0]:
             _last_size[0] = screen.get_size()
             box.center_on(screen)
@@ -605,7 +628,7 @@ def _attempt_capture_with_dice(game, move, atk_piece, def_piece, screen, theme_i
     def_roll = random.randint(1, 6)
     outcome = _combat_outcome(atk_roll, def_roll)
     if screen is not None:
-        show_combat_roll_modal(screen, atk_piece, def_piece, atk_roll, def_roll, outcome, theme_index)
+        show_combat_roll_modal(screen, game, atk_piece, def_piece, atk_roll, def_roll, outcome, theme_index)
     if outcome == 'defender_wins':
         game.make_attacker_loss(move)
         return False
