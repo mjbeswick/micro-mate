@@ -61,6 +61,12 @@ _options = {
 _toast = {"text": None, "until": 0}
 _toast_cache = {"text": None, "theme_index": None, "surface": None, "label_rect": None, "bg_rect": None}
 
+def _dbg(msg):
+    """Print a timestamped debug line when --debug is active."""
+    if _options.get("debug"):
+        ts = time.strftime("%H:%M:%S", time.localtime()) + f".{int(time.monotonic() * 1000) % 1000:03d}"
+        print(f"[{ts}] {msg}", flush=True)
+
 def _sq_to_alg(row, col, board_rows):
     """Convert (row, col) to algebraic square label like 'e2'."""
     return chr(ord('a') + col) + str(board_rows - row)
@@ -164,6 +170,7 @@ def create_game_with_size(rows, cols):
 
 def show_help_modal(screen, game, theme_index, selected_sq=None):
     """Display help modal with shortcuts using thorpy (default colors)."""
+    _dbg("modal open: Help")
     from thorpy.elements import TitleBox, Text, Group
     _configure_thorpy_for_modal(screen, theme_index)
     
@@ -212,6 +219,7 @@ def show_help_modal(screen, game, theme_index, selected_sq=None):
             box.center_on(screen)
     
     box.launch_alone(draw_bg, click_outside_cancel=True)
+    _dbg("modal closed: Help")
 
 def _draw_background_for_modal(screen, game, theme_index):
     """Draw board with blur overlay when modal is shown."""
@@ -236,6 +244,7 @@ def show_new_game_modal(screen, theme_index, allow_cancel=False,
                         current_size=None, current_depth=None, piece_surfaces=None,
                         base_window=720):
     """Pick board size, AI strength, game mode, and color via thorpy. Returns (rows, cols, depth, mode, color) or None."""
+    _dbg("modal open: New Game")
     from thorpy.elements import TitleBox, TogglablesPool, Button, Group, Text, Box
     from micromate.engine import Game
     _configure_thorpy_for_modal(screen, theme_index)
@@ -426,11 +435,13 @@ def show_new_game_modal(screen, theme_index, allow_cancel=False,
             pass
     
     box.launch_alone(func_before=draw_board_preview, click_outside_cancel=allow_cancel)
-    
+    _dbg(f"modal closed: New Game → {result['value']}")
     return result["value"]
 
 def show_checkmate_modal(screen, game, theme_index, loser_color):
     """Display checkmate modal announcing the winner."""
+    winner = "White" if loser_color == 'b' else "Black"
+    _dbg(f"modal open: Checkmate ({winner} wins)")
     from thorpy.elements import TitleBox, Text, Button
     _configure_thorpy_for_modal(screen, theme_index)
 
@@ -453,6 +464,7 @@ def show_checkmate_modal(screen, game, theme_index, loser_color):
             box.center_on(screen)
 
     box.launch_alone(func_before=draw_bg, click_outside_cancel=False)
+    _dbg("modal closed: Checkmate")
 
 HUMAN_COLOR = 'w'
 
@@ -603,6 +615,7 @@ def _run_ai_with_modal(game, screen, theme_index):
 
 def show_thinking_modal(screen, game, theme_index, thread, stop_event, start_time):
     """Block until AI worker finishes. Thorpy modal with an elapsed-time counter."""
+    _dbg("modal open: Thinking")
     from thorpy.elements import Button, Text, TitleBox
     _configure_thorpy_for_modal(screen, theme_index)
 
@@ -631,6 +644,7 @@ def show_thinking_modal(screen, game, theme_index, thread, stop_event, start_tim
             tp.loops.quit_current_loop()
 
     box.launch_alone(func_before=update_func)
+    _dbg("modal closed: Thinking")
     thread.join()
 
 def _combat_outcome(atk_roll, def_roll):
@@ -666,12 +680,12 @@ def _render_die_surface(value, size=80):
 
 def show_combat_roll_modal(screen, game, atk_piece, def_piece, atk_roll, def_roll, outcome, theme_index):
     """Thorpy modal with animated dice (SingleStateImage supports set_image) and auto-dismiss."""
-    from thorpy.elements import TitleBox, Text, Button, SingleStateImage, Group
-    _configure_thorpy_for_modal(screen, theme_index)
-
     color_name = lambda p: 'White' if p.color == 'w' else 'Black'
     atk_label = f"{color_name(atk_piece)} {atk_piece.kind}"
     def_label = f"{color_name(def_piece)} {def_piece.kind}"
+    _dbg(f"modal open: Combat Roll ({atk_label} {atk_roll} vs {def_label} {def_roll} → {outcome})")
+    from thorpy.elements import TitleBox, Text, Button, SingleStateImage, Group
+    _configure_thorpy_for_modal(screen, theme_index)
 
     if outcome == 'blocked':
         result_line = "It's a tie — no capture!"
@@ -739,6 +753,7 @@ def show_combat_roll_modal(screen, game, atk_piece, def_piece, atk_roll, def_rol
                 ok_btn.set_text(f"OK ({int(remaining) + 1})")
 
     box.launch_alone(func_before=draw_bg, click_outside_cancel=True)
+    _dbg("modal closed: Combat Roll")
 
 def _attempt_capture_with_dice(game, move, atk_piece, def_piece, screen, theme_index):
     """Roll dice for a capture in dice mode. Returns True if the caller should still
@@ -1136,9 +1151,12 @@ def main(argv=None):
 
             for ev in pygame.event.get():
                 if ev.type == pygame.QUIT:
+                    _dbg("event: QUIT")
                     running = False
                 elif ev.type == pygame.KEYDOWN:
                     unicode_char = getattr(ev, 'unicode', None)
+                    key_name = pygame.key.name(ev.key)
+                    _dbg(f"event: KEYDOWN {key_name!r}")
                     if ev.key == pygame.K_ESCAPE and not awaiting_restart and not show_help and selected_sq is None:
                         running = _open_new_game(running)
                         continue
@@ -1159,15 +1177,20 @@ def main(argv=None):
                     if ev.button == 1 and not awaiting_restart and not show_help:
                         now = pygame.time.get_ticks()
                         if now - _last_click["time"] <= DOUBLE_CLICK_MS and _last_click["pos"] == ev.pos:
+                            _dbg(f"event: double-click at {ev.pos} → New Game")
                             running = _open_new_game(running)
                             _last_click["time"] = 0
                         else:
                             _last_click["time"] = now
                             _last_click["pos"] = ev.pos
+                            sq = pixel_to_square(screen.get_size(), game.board, ev.pos[0], ev.pos[1],
+                                                 show_coords=_options["show_coords"])
+                            _dbg(f"event: click at {ev.pos} → sq={sq}")
                             selected_sq, cursor_sq = handle_mousedown(
                                 game, screen, ev.pos, selected_sq, cursor_sq, theme_index
                             )
                 elif ev.type == pygame.VIDEORESIZE:
+                    _dbg(f"event: VIDEORESIZE {ev.w}x{ev.h}")
                     new_w, new_h = ev.w, ev.h
                     try:
                         desktops = pygame.display.get_desktop_sizes()
