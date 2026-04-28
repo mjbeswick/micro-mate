@@ -60,6 +60,7 @@ _options = {
 }
 _toast = {"text": None, "until": 0}
 _toast_cache = {"text": None, "theme_index": None, "surface": None, "label_rect": None, "bg_rect": None}
+_piece_surfaces = None  # set once in main(); used for mid-pause board renders
 
 def _dbg(msg):
     """Print a timestamped debug line when --debug is active."""
@@ -125,6 +126,17 @@ def _make_modal_transparent(modal):
     if hasattr(modal, 'surface') and modal.surface is not None:
         modal.surface.set_alpha(200)  # 200/255 = ~78% opaque
     return modal
+
+def _render_board_now(screen, game, theme_index):
+    """Render the current board (with pieces) and flip — used during pause loops."""
+    screen.fill(get_theme(theme_index)["background"])
+    draw_board(
+        screen, game.board, _piece_surfaces,
+        last_move=game.current_move,
+        theme_index=theme_index,
+        show_coords=_options["show_coords"],
+    )
+    pygame.display.flip()
 
 def _blur_screen(screen, radius=5):
     """Create a blurred overlay effect by drawing semi-transparent darker surface."""
@@ -474,6 +486,12 @@ def _check_game_over(game, screen, theme_index):
     if game.get_legal_moves():
         return
     if game.board._is_in_check(game.turn):
+        # Pause so the player can see the final position before the modal appears.
+        _render_board_now(screen, game, theme_index)
+        deadline = time.monotonic() + 0.5
+        while time.monotonic() < deadline:
+            pygame.event.pump()
+            pygame.time.wait(10)
         show_checkmate_modal(screen, game, theme_index, loser_color=game.turn)
 
 def _movable_squares(game):
@@ -550,11 +568,10 @@ def apply_ai_move_if_needed(game, screen=None, theme_index=DEFAULT_THEME_INDEX):
     if not game.get_legal_moves():
         return
     if screen is not None and _options.get("dice_mode"):
-        deadline = time.monotonic() + 0.5
+        deadline = time.monotonic() + 0.3
         while time.monotonic() < deadline:
             pygame.event.pump()
-            _draw_background_for_modal(screen, game, theme_index)
-            pygame.display.flip()
+            _render_board_now(screen, game, theme_index)
             pygame.time.wait(10)
     t0 = time.monotonic()
     if screen is None:
@@ -571,8 +588,7 @@ def apply_ai_move_if_needed(game, screen=None, theme_index=DEFAULT_THEME_INDEX):
             deadline = time.monotonic() + remaining
             while time.monotonic() < deadline:
                 pygame.event.pump()
-                _draw_background_for_modal(screen, game, theme_index)
-                pygame.display.flip()
+                _render_board_now(screen, game, theme_index)
                 pygame.time.wait(10)
     if _options["dice_mode"] and screen is not None:
         dest_piece = game.board.piece_at(ai_move.to_sq[0], ai_move.to_sq[1])
@@ -1110,6 +1126,8 @@ def main(argv=None):
     screen, size = _fit_window_to_board(screen, base_window, game.board)
     apply_ai_move_if_needed(game)
     piece_surfaces = load_piece_surfaces()
+    global _piece_surfaces
+    _piece_surfaces = piece_surfaces
     awaiting_restart = False
     selected_sq = None
     cursor_sq = None
