@@ -267,11 +267,15 @@ def show_new_game_modal(screen, theme_index, allow_cancel=False,
     depth_group = Group([depth_label, depth_pool], "v")
     
     mode_label = Text("Game mode")
-    mode_pool = TogglablesPool("", choices=modes, initial_value=0)
+    current_mode = _options.get("game_mode", modes[0])
+    mode_idx = modes.index(current_mode) if current_mode in modes else 0
+    mode_pool = TogglablesPool("", choices=modes, initial_value=mode_idx)
     mode_group = Group([mode_label, mode_pool], "v")
-    
+
     color_label = Text("Your color")
-    color_pool = TogglablesPool("", choices=colors, initial_value=0)
+    current_color = _options.get("player_color", colors[0])
+    color_idx = colors.index(current_color) if current_color in colors else 0
+    color_pool = TogglablesPool("", choices=colors, initial_value=color_idx)
     color_group = Group([color_label, color_pool], "v")
     
     coords_label = Text("Show coordinates")
@@ -946,7 +950,7 @@ def load_options():
     try:
         saved_opts = json.loads(OPTIONS_PATH.read_text(encoding="utf-8"))
         # Only load supported keys
-        for key in ["show_coords", "ai_depth", "theme_index", "dice_mode"]:
+        for key in ["show_coords", "ai_depth", "theme_index", "dice_mode", "game_mode", "player_color"]:
             if key in saved_opts:
                 _options[key] = saved_opts[key]
     except (OSError, ValueError, KeyError) as exc:
@@ -957,7 +961,7 @@ def save_options():
     try:
         OPTIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
         # Only save specific keys
-        opts_to_save = {k: _options[k] for k in ["show_coords", "ai_depth", "theme_index", "dice_mode"]}
+        opts_to_save = {k: _options[k] for k in ["show_coords", "ai_depth", "theme_index", "dice_mode", "game_mode", "player_color"]}
         OPTIONS_PATH.write_text(json.dumps(opts_to_save, indent=2), encoding="utf-8")
     except (OSError, TypeError) as exc:
         pass  # Silently ignore errors
