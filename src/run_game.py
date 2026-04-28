@@ -153,7 +153,14 @@ def print_board_notation(game):
 
 def create_game_with_size(rows, cols):
     """Create a new game with specified board size."""
-    return Game(rows=rows, cols=cols, ai_depth=_options["ai_depth"])
+    mode  = _options.get("game_mode", "Human vs AI")
+    depth = _options["ai_depth"]
+    dice  = "dice" if _options.get("dice_mode") else ""
+    parts = [f"{rows}x{cols}", mode, f"depth={depth}"]
+    if dice:
+        parts.append(dice)
+    print(f"--- New game: {', '.join(parts)} ---", flush=True)
+    return Game(rows=rows, cols=cols, ai_depth=depth)
 
 def show_help_modal(screen, game, theme_index, selected_sq=None):
     """Display help modal with shortcuts using thorpy (default colors)."""
