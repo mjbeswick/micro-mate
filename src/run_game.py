@@ -462,6 +462,51 @@ def show_new_game_modal(screen, theme_index, allow_cancel=False, allow_continue=
     _dbg(f"modal closed: New Game → {result['value']}")
     return result["value"]
 
+def show_game_menu_modal(screen, game, theme_index):
+    """Show Exit / Continue / New Game options over the running game. Returns 'exit', 'continue', or 'new'."""
+    _dbg("modal open: Game Menu")
+    from thorpy.elements import TitleBox, Button, Group
+    _configure_thorpy_for_modal(screen, theme_index)
+
+    result = {"value": "continue"}
+
+    def on_exit():
+        result["value"] = "exit"
+        tp.loops.quit_current_loop()
+
+    def on_continue():
+        result["value"] = "continue"
+        tp.loops.quit_current_loop()
+
+    def on_new():
+        result["value"] = "new"
+        tp.loops.quit_current_loop()
+
+    exit_btn = Button("Exit")
+    exit_btn.at_unclick = on_exit
+    continue_btn = Button("Continue")
+    continue_btn.at_unclick = on_continue
+    new_btn = Button("New Game")
+    new_btn.at_unclick = on_new
+
+    buttons = Group([exit_btn, continue_btn, new_btn], "h")
+
+    box = TitleBox("Game", children=[buttons])
+    box.center_on(screen)
+    _make_modal_transparent(box)
+
+    _last_size = [screen.get_size()]
+    def draw_bg():
+        _draw_background_for_modal(screen, game, theme_index)
+        if screen.get_size() != _last_size[0]:
+            _last_size[0] = screen.get_size()
+            box.center_on(screen)
+
+    box.launch_alone(func_before=draw_bg, click_outside_cancel=True)
+    _dbg(f"modal closed: Game Menu → {result['value']}")
+    return result["value"]
+
+
 def show_checkmate_modal(screen, game, theme_index, loser_color):
     """Display game-over modal announcing the winner."""
     winner = "White" if loser_color == 'b' else "Black"
@@ -1193,9 +1238,17 @@ def main(argv=None):
     def _open_new_game(running):
         nonlocal game, screen, size, selected_sq, cursor_sq
         game_has_moves = bool(game.move_history)
+        if game_has_moves:
+            menu = show_game_menu_modal(screen, game, theme_index)
+            if menu == "continue":
+                return running
+            if menu == "exit":
+                return False
+            # "new" — fall through to new-game modal with Exit + Start buttons
         result = show_new_game_modal(
-            screen, theme_index, allow_cancel=not game_has_moves,
-            allow_continue=game_has_moves,
+            screen, theme_index,
+            allow_cancel=True,
+            allow_continue=False,
             current_size=(game.board.rows, game.board.cols),
             current_depth=_options["ai_depth"],
             piece_surfaces=piece_surfaces,
