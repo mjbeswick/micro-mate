@@ -1237,14 +1237,12 @@ def main(argv=None):
 
     def _open_new_game(running):
         nonlocal game, screen, size, selected_sq, cursor_sq
-        game_has_moves = bool(game.move_history)
-        if game_has_moves:
-            menu = show_game_menu_modal(screen, game, theme_index)
-            if menu == "continue":
-                return running
-            if menu == "exit":
-                return False
-            # "new" — fall through to new-game modal with Exit + Start buttons
+        menu = show_game_menu_modal(screen, game, theme_index)
+        if menu == "continue":
+            return running
+        if menu == "exit":
+            return False
+        # "new" — fall through to new-game modal with Exit + Start buttons
         result = show_new_game_modal(
             screen, theme_index,
             allow_cancel=True,
