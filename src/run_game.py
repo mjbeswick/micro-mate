@@ -468,25 +468,11 @@ def show_new_game_modal(screen, theme_index, allow_cancel=False, allow_continue=
     _dbg(f"modal closed: New Game → {result['value']}")
     return result["value"]
 
-def _render_adv_bar_surface(eval_score, width, height):
-    """Horizontal advantage bar: black left, white right, split by win probability."""
-    capped = max(-2000.0, min(2000.0, float(eval_score)))
-    p_white = 1.0 / (1.0 + math.exp(-capped / 400.0))
-    surf = pygame.Surface((width, height))
-    black_w = int(width * (1.0 - p_white))
-    white_w = width - black_w
-    if black_w > 0:
-        pygame.draw.rect(surf, (28, 28, 28), (0, 0, black_w, height))
-    if white_w > 0:
-        pygame.draw.rect(surf, (218, 218, 212), (black_w, 0, white_w, height))
-    pygame.draw.rect(surf, (110, 110, 110), (0, 0, width, height), 1)
-    return surf, p_white
-
 
 def show_game_menu_modal(screen, game, theme_index):
     """Show Quit / Resume / New Game options over the running game. Returns 'exit', 'continue', or 'new'."""
     _dbg("modal open: Game Menu")
-    from thorpy.elements import TitleBox, Button, Group, Text, SingleStateImage
+    from thorpy.elements import TitleBox, Button, Group, Text
     _configure_thorpy_for_modal(screen, theme_index)
 
     result = {"value": "continue"}
@@ -507,17 +493,14 @@ def show_game_menu_modal(screen, game, theme_index):
     line2 = Text("What would you like to do?")
     msg_group = Group([line1, line2], "v", gap=8, align="center", margins=(8, 6))
 
-    # Advantage bar
-    w = screen.get_width()
-    bar_w = max(120, min(240, int(w * 0.38)))
-    bar_h = max(12, min(20, int(w * 0.025)))
+    # Win probability
     eval_score = game.board.evaluate(pseudo_legal=_options.get("dice_mode", False))
-    bar_surf, p_white = _render_adv_bar_surface(eval_score, bar_w, bar_h)
-    bar_img = SingleStateImage(bar_surf)
+    capped = max(-2000.0, min(2000.0, float(eval_score)))
+    p_white = 1.0 / (1.0 + math.exp(-capped / 400.0))
     pct_w = int(p_white * 100)
     pct_b = 100 - pct_w
-    adv_label = Text(f"White {pct_w}%  •  Black {pct_b}%")
-    adv_group = Group([bar_img, adv_label], "v", gap=4, align="center", margins=(8, 4))
+    adv_group = Group([Text(f"White {pct_w}%  •  Black {pct_b}%")], "v",
+                      align="center", margins=(8, 4))
 
     quit_btn = Button("Quit")
     quit_btn.at_unclick = on_exit
