@@ -536,6 +536,11 @@ def apply_ai_move_if_needed(game, screen=None, theme_index=DEFAULT_THEME_INDEX):
         return
     if not game.get_legal_moves():
         return
+    if screen is not None and _options.get("dice_mode"):
+        deadline = time.monotonic() + 0.5
+        while time.monotonic() < deadline:
+            pygame.event.pump()
+            pygame.time.wait(10)
     t0 = time.monotonic()
     if screen is None:
         ai_move = game.get_ai_move()
