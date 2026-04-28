@@ -535,18 +535,21 @@ def show_checkmate_modal(screen, game, theme_index, loser_color):
     from thorpy.elements import TitleBox, Text, Button
     _configure_thorpy_for_modal(screen, theme_index)
 
+    from thorpy.elements import Group
     if _options["dice_mode"]:
         title = "King Captured!"
-        body  = f"{winner} wins!\n{winner} captured the {loser} King."
+        line1 = Text(f"{winner} wins!")
+        line2 = Text(f"{winner} captured the {loser} King.")
     else:
         title = "Checkmate"
-        body  = f"{winner} wins!\n{loser} is checkmated."
+        line1 = Text(f"{winner} wins!")
+        line2 = Text(f"{loser} is checkmated.")
 
-    msg_text = Text(body)
+    msg_group = Group([line1, line2], "v", gap=4, align="center", margins=(8, 6))
     ok_btn = Button("OK")
     ok_btn.at_unclick = lambda: tp.loops.quit_current_loop()
 
-    box = TitleBox(title, children=[msg_text, ok_btn])
+    box = TitleBox(title, children=[msg_group, ok_btn])
     box.center_on(screen)
     _make_modal_transparent(box)
 
@@ -747,7 +750,7 @@ def _run_ai_with_modal(game, screen, theme_index, pseudo_legal: bool = False):
 def show_thinking_modal(screen, game, theme_index, thread, stop_event, start_time):
     """Block until AI worker finishes. Thorpy modal with an elapsed-time counter."""
     _dbg("modal open: Thinking")
-    from thorpy.elements import Button, Text, TitleBox
+    from thorpy.elements import Button, Text, TitleBox, Group
     _configure_thorpy_for_modal(screen, theme_index)
 
     def on_force_move():
@@ -756,10 +759,11 @@ def show_thinking_modal(screen, game, theme_index, thread, stop_event, start_tim
 
     # Pad the label with spaces so the modal is wide enough for the Force move button.
     label = Text("Searching... 0.0s          ")
+    label_group = Group([label], "v", align="center", margins=(8, 4))
     force_btn = Button("Force move")
     force_btn.at_unclick = on_force_move
 
-    box = TitleBox("Thinking", children=[label, force_btn])
+    box = TitleBox("Thinking", children=[label_group, force_btn])
     box.center_on(screen)
     _make_modal_transparent(box)
 
@@ -828,14 +832,15 @@ def show_combat_roll_modal(screen, game, atk_piece, def_piece, atk_roll, def_rol
     ROLL_S = 0.8
     AUTO_HIDE_S = 3
 
-    matchup = Text(f"{atk_label}  vs  {def_label}")
+    matchup = Group([Text(f"{atk_label}  vs  {def_label}")], "v", align="center", margins=(4, 2))
     atk_die = SingleStateImage(_render_die_surface(1))
     vs_text = Text("vs")
     def_die = SingleStateImage(_render_die_surface(1))
-    dice_row = Group([atk_die, vs_text, def_die], "h")
+    dice_row = Group([atk_die, vs_text, def_die], "h", align="center")
     # Pre-size with the final/widest text so the box dimensions are fixed from
     # the start; then swap to the rolling-phase placeholders before launch.
     result_text = Text(result_line)
+    result_group = Group([result_text], "v", align="center", margins=(4, 2))
     ok_btn = Button("OK (3)")
     ok_btn.at_unclick = lambda: tp.loops.quit_current_loop()
 
@@ -843,7 +848,7 @@ def show_combat_roll_modal(screen, game, atk_piece, def_piece, atk_roll, def_rol
     modal_w = max(280, min(360, int(min(w, h) * 0.45)))
     modal_h = max(240, min(320, int(min(w, h) * 0.40)))
 
-    box = TitleBox("Combat Roll!", children=[matchup, dice_row, result_text, ok_btn])
+    box = TitleBox("Combat Roll!", children=[matchup, dice_row, result_group, ok_btn])
     box.set_size((modal_w, modal_h))
     box.center_on(screen)
     _make_modal_transparent(box)
@@ -903,15 +908,15 @@ def _attempt_capture_with_dice(game, move, atk_piece, def_piece, screen, theme_i
     atk_roll = random.randint(1, 6)
     def_roll = random.randint(1, 6)
     outcome = _combat_outcome(atk_roll, def_roll)
-    if screen is not None:
-        show_combat_roll_modal(screen, game, atk_piece, def_piece, atk_roll, def_roll, outcome, theme_index)
+    # Apply non-capture outcomes before showing the modal so the board
+    # background already reflects the result while the dice are on screen.
     if outcome == 'defender_wins':
         game.make_attacker_loss(move)
-        return False
-    if outcome == 'blocked':
+    elif outcome == 'blocked':
         game.skip_turn(move)
-        return False
-    return True  # attacker_wins
+    if screen is not None:
+        show_combat_roll_modal(screen, game, atk_piece, def_piece, atk_roll, def_roll, outcome, theme_index)
+    return outcome == 'attacker_wins'
 
 def attempt_move(game, selected_sq, to_sq, theme_index):
     """Try moving from selected_sq to to_sq. Returns (new_selected_sq, new_cursor_sq)."""
