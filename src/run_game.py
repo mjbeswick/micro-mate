@@ -484,7 +484,7 @@ def show_game_menu_modal(screen, game, theme_index):
 
     line1 = Text("Game paused.")
     line2 = Text("What would you like to do?")
-    msg_group = Group([line1, line2], "v", gap=6, align="center")
+    msg_group = Group([line1, line2], "v", gap=8, align="center", margins=(8, 6))
 
     quit_btn = Button("Quit")
     quit_btn.at_unclick = on_exit
@@ -493,10 +493,9 @@ def show_game_menu_modal(screen, game, theme_index):
     new_btn = Button("New Game")
     new_btn.at_unclick = on_new
 
-    buttons = Group([quit_btn, resume_btn, new_btn], "h")
-    spacer = Text("")
+    buttons = Group([quit_btn, resume_btn, new_btn], "h", align="center", margins=(8, 10))
 
-    box = TitleBox("Paused", children=[msg_group, spacer, buttons])
+    box = TitleBox("Paused", children=[msg_group, buttons])
     box.center_on(screen)
     _make_modal_transparent(box)
 
