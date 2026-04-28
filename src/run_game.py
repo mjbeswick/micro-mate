@@ -815,15 +815,16 @@ def _render_die_surface(value, size=80):
 
 def show_combat_roll_modal(screen, game, atk_piece, def_piece, atk_roll, def_roll, outcome, theme_index):
     """Thorpy modal with animated dice (SingleStateImage supports set_image) and auto-dismiss."""
+    _PIECE_NAMES = {'P': 'Pawn', 'N': 'Knight', 'B': 'Bishop', 'R': 'Rook', 'Q': 'Queen', 'K': 'King'}
     color_name = lambda p: 'White' if p.color == 'w' else 'Black'
-    atk_label = f"{color_name(atk_piece)} {atk_piece.kind}"
-    def_label = f"{color_name(def_piece)} {def_piece.kind}"
+    atk_label = f"{color_name(atk_piece)} {_PIECE_NAMES.get(atk_piece.kind, atk_piece.kind)}"
+    def_label = f"{color_name(def_piece)} {_PIECE_NAMES.get(def_piece.kind, def_piece.kind)}"
     _dbg(f"modal open: Combat Roll ({atk_label} {atk_roll} vs {def_label} {def_roll} → {outcome})")
     from thorpy.elements import TitleBox, Text, Button, SingleStateImage, Group
     _configure_thorpy_for_modal(screen, theme_index)
 
     if outcome == 'blocked':
-        result_line = "It's a tie — no capture!"
+        result_line = "Draw! The attack is repelled."
     elif outcome == 'attacker_wins':
         result_line = f"{atk_label} wins the combat!"
     else:
