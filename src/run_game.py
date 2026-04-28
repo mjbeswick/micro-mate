@@ -263,7 +263,7 @@ def _strength_label(depth):
 
 def show_new_game_modal(screen, theme_index, allow_cancel=False, allow_continue=False,
                         current_size=None, current_depth=None, piece_surfaces=None,
-                        base_window=720):
+                        base_window=720, set_mode=None):
     """Pick board size, AI strength, game mode, and color via thorpy. Returns (rows, cols, depth, mode, color) or None."""
     _dbg("modal open: New Game")
     from thorpy.elements import TitleBox, TogglablesPool, Button, Group, Text, Box
@@ -440,7 +440,8 @@ def show_new_game_modal(screen, theme_index, allow_cancel=False, allow_continue=
             target_w = cell * selected_cols + 2 * border_each + ADV_BAR_W
             target_h = cell * selected_rows + 2 * border_each
             if screen.get_size() != (target_w, target_h):
-                pygame.display.set_mode((target_w, target_h), pygame.RESIZABLE)
+                _sm = set_mode or (lambda sz: pygame.display.set_mode(sz, pygame.RESIZABLE))
+                _sm((target_w, target_h))
                 _last_size[0] = screen.get_size()
                 box.center_on(screen)
 
@@ -628,8 +629,14 @@ def _max_window_size():
         pass
     return 9999, 9999
 
-def _fit_window_to_board(screen, base_size, board):
-    """Resize the display so it tightly fits the board (no letterboxing)."""
+def _fit_window_to_board(screen, base_size, board, set_mode=None):
+    """Resize the display so it tightly fits the board (no letterboxing).
+
+    set_mode defaults to pygame.display.set_mode; pass _safe_set_mode from
+    main() to silently ignore resize errors on framebuffer drivers.
+    """
+    if set_mode is None:
+        set_mode = lambda sz: pygame.display.set_mode(sz, pygame.RESIZABLE)
     border_each = max(18, base_size // 28) if _options["show_coords"] else 0
     inner = max(80, base_size - 2 * border_each)
     cell = max(40, min(inner // board.cols, inner // board.rows))
@@ -643,7 +650,7 @@ def _fit_window_to_board(screen, base_size, board):
         target_h = cell * board.rows + 2 * border_each
     target = (target_w, target_h)
     if screen.get_size() != target:
-        screen = pygame.display.set_mode(target, pygame.RESIZABLE)
+        screen = set_mode(target)
     return screen, target
 
 def apply_ai_move_if_needed(game, screen=None, theme_index=DEFAULT_THEME_INDEX):
@@ -1215,24 +1222,40 @@ def main(argv=None):
             pass
     pygame.mouse.set_cursor = _safe_set_cursor  # type: ignore[method-assign]
 
+    # Framebuffer drivers (fbcon, kmsdrm, directfb) don't support RESIZABLE or
+    # dynamic set_mode calls after the initial one.  Detect once and suppress
+    # all subsequent resize attempts silently.
+    _fb_drivers = {'fbcon', 'directfb', 'kmsdrm', 'offscreen', 'dummy'}
+    _resizable = os.environ.get('SDL_VIDEODRIVER', '').lower() not in _fb_drivers
+    _display_flags = pygame.RESIZABLE if _resizable else 0
+
+    def _safe_set_mode(size, flags=None):
+        """Call set_mode, ignoring errors on drivers that don't support resizing."""
+        if flags is None:
+            flags = _display_flags
+        try:
+            return pygame.display.set_mode(size, flags)
+        except pygame.error:
+            return pygame.display.get_surface()
+
     import thorpy as tp  # noqa: PLC0415 — must be after pygame.init() for Linux cursor support
     globals()['tp'] = tp
     base_window = max(200, args.window)
     size = (base_window, base_window)
-    screen = pygame.display.set_mode(size, pygame.RESIZABLE)
+    screen = pygame.display.set_mode(size, _display_flags)
     pygame.display.set_caption('Micro-Mate (Toledo)')
     clock = pygame.time.Clock()
 
     theme_index = _resolve_initial_theme(args)
     # Pre-fit window to default board so the modal preview and post-Start board share the same geometry
     _pre_board = Game(rows=DEFAULT_BOARD_SIZE[0], cols=DEFAULT_BOARD_SIZE[1])
-    screen, size = _fit_window_to_board(screen, base_window, _pre_board.board)
+    screen, size = _fit_window_to_board(screen, base_window, _pre_board.board, _safe_set_mode)
     tp.init(screen, tp.theme_classic)  # Initial theme, will be overridden below
     _apply_thorpy_theme(theme_index)
     game = _initial_game(screen, theme_index, args)
     if game is None:
         return 0
-    screen, size = _fit_window_to_board(screen, base_window, game.board)
+    screen, size = _fit_window_to_board(screen, base_window, game.board, _safe_set_mode)
     apply_ai_move_if_needed(game)
     piece_surfaces = load_piece_surfaces()
     global _piece_surfaces
@@ -1261,6 +1284,7 @@ def main(argv=None):
             current_depth=_options["ai_depth"],
             piece_surfaces=piece_surfaces,
             base_window=base_window,
+            set_mode=_safe_set_mode,
         )
         if result == "quit":
             return False
@@ -1274,7 +1298,7 @@ def main(argv=None):
             game = create_game_with_size(rows, cols)
             selected_sq = None
             cursor_sq = None
-            screen, size = _fit_window_to_board(screen, base_window, game.board)
+            screen, size = _fit_window_to_board(screen, base_window, game.board, _safe_set_mode)
             pygame.display.set_caption(
                 'Micro-Mate [Dice]' if _options["dice_mode"] else 'Micro-Mate (Toledo)'
             )
@@ -1305,7 +1329,7 @@ def main(argv=None):
                         continue
                     if ev.key == pygame.K_c and not awaiting_restart and not show_help:
                         _options["show_coords"] = not _options["show_coords"]
-                        screen, size = _fit_window_to_board(screen, base_window, game.board)
+                        screen, size = _fit_window_to_board(screen, base_window, game.board, _safe_set_mode)
                         continue
                     awaiting_restart, should_quit, theme_index, selected_sq, cursor_sq, show_help = handle_keydown(
                         game, ev.key, awaiting_restart, theme_index, selected_sq, cursor_sq, show_help, unicode_char
@@ -1347,7 +1371,7 @@ def main(argv=None):
                         new_h = cell * game.board.rows
                     if (new_w, new_h) != size:
                         size = (new_w, new_h)
-                        screen = pygame.display.set_mode(size, pygame.RESIZABLE)
+                        screen = _safe_set_mode(size)
 
             screen.fill(get_theme(theme_index)["background"])
             draw_board(
