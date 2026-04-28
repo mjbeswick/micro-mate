@@ -463,9 +463,9 @@ def show_new_game_modal(screen, theme_index, allow_cancel=False, allow_continue=
     return result["value"]
 
 def show_game_menu_modal(screen, game, theme_index):
-    """Show Exit / Continue / New Game options over the running game. Returns 'exit', 'continue', or 'new'."""
+    """Show Quit / Resume / New Game options over the running game. Returns 'exit', 'continue', or 'new'."""
     _dbg("modal open: Game Menu")
-    from thorpy.elements import TitleBox, Button, Group
+    from thorpy.elements import TitleBox, Button, Group, Text
     _configure_thorpy_for_modal(screen, theme_index)
 
     result = {"value": "continue"}
@@ -482,16 +482,17 @@ def show_game_menu_modal(screen, game, theme_index):
         result["value"] = "new"
         tp.loops.quit_current_loop()
 
-    exit_btn = Button("Exit")
-    exit_btn.at_unclick = on_exit
-    continue_btn = Button("Continue")
-    continue_btn.at_unclick = on_continue
+    msg = Text("Game paused. What would you like to do?")
+    quit_btn = Button("Quit")
+    quit_btn.at_unclick = on_exit
+    resume_btn = Button("Resume")
+    resume_btn.at_unclick = on_continue
     new_btn = Button("New Game")
     new_btn.at_unclick = on_new
 
-    buttons = Group([exit_btn, continue_btn, new_btn], "h")
+    buttons = Group([quit_btn, resume_btn, new_btn], "h")
 
-    box = TitleBox("Game", children=[buttons])
+    box = TitleBox("Paused", children=[msg, buttons])
     box.center_on(screen)
     _make_modal_transparent(box)
 
