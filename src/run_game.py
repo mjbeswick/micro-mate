@@ -56,9 +56,48 @@ _options = {
     "game_mode": "Human vs AI",
     "player_color": "White",
     "dice_mode": False,
+    "debug": False,
 }
 _toast = {"text": None, "until": 0}
 _toast_cache = {"text": None, "theme_index": None, "surface": None, "label_rect": None, "bg_rect": None}
+
+def _sq_to_alg(row, col, board_rows):
+    """Convert (row, col) to algebraic square label like 'e2'."""
+    return chr(ord('a') + col) + str(board_rows - row)
+
+def _log_move(move, piece, captured, board_rows, move_index, ai_time=None):
+    """Print a move to the terminal in real time.
+
+    piece and captured are the Piece objects read from the board BEFORE
+    the move was executed. move_index is the 0-based index in move_history.
+    """
+    from_row, from_col = move.from_sq
+    to_row, to_col     = move.to_sq
+
+    from_alg = _sq_to_alg(from_row, from_col, board_rows)
+    to_alg   = _sq_to_alg(to_row,   to_col,   board_rows)
+
+    color     = piece.color if piece else '?'
+    full_move = move_index // 2 + 1
+    is_white  = (move_index % 2 == 0)  # white always moves first
+
+    sep   = 'x' if captured else '-'
+    promo = f"={move.promotion}" if move.promotion else ''
+    coord = f"{from_alg}{sep}{to_alg}{promo}"
+
+    if _options["debug"]:
+        piece_name  = piece.kind if piece else '?'
+        color_label = 'White' if color == 'w' else 'Black'
+        cap_str     = f" x{captured.kind}" if captured else ''
+        time_str    = f"  [{ai_time:.2f}s]" if ai_time is not None else ''
+        detail = f"  ({color_label} {piece_name}{cap_str}){time_str}"
+    else:
+        detail = ''
+
+    if is_white:
+        print(f"{full_move}. {coord}{detail}", flush=True)
+    else:
+        print(f"{full_move}. ...{coord}{detail}", flush=True)
 
 def _apply_thorpy_theme(theme_index):
     """Apply thorpy theme_game1 with colors from the chess theme."""
@@ -486,10 +525,12 @@ def apply_ai_move_if_needed(game, screen=None, theme_index=DEFAULT_THEME_INDEX):
         return
     if not game.get_legal_moves():
         return
+    t0 = time.monotonic()
     if screen is None:
         ai_move = game.get_ai_move()
     else:
         ai_move = _run_ai_with_modal(game, screen, theme_index)
+    ai_time = time.monotonic() - t0
     if ai_move is None:
         return
     if _options["dice_mode"] and screen is not None:
@@ -501,7 +542,13 @@ def apply_ai_move_if_needed(game, screen=None, theme_index=DEFAULT_THEME_INDEX):
                 if screen is not None:
                     _check_game_over(game, screen, theme_index)
                 return  # AI's capture was blocked or AI lost piece — turn consumed
+    _log_piece    = game.board.piece_at(ai_move.from_sq[0], ai_move.from_sq[1])
+    _log_captured = game.board.piece_at(ai_move.to_sq[0],   ai_move.to_sq[1])
+    _log_rows     = game.board.rows
     game.make_move(ai_move)
+    _log_move(ai_move, _log_piece, _log_captured, _log_rows,
+              len(game.move_history) - 1,
+              ai_time=ai_time if _options["debug"] else None)
     if screen is not None:
         _check_game_over(game, screen, theme_index)
 
@@ -702,6 +749,11 @@ def attempt_move(game, selected_sq, to_sq, theme_index):
 
     move = Move(from_sq=selected_sq, to_sq=to_sq, promotion=promotion)
 
+    # Snapshot board info needed for logging before the move mutates the board.
+    _log_piece_pre    = game.board.piece_at(selected_sq[0], selected_sq[1])
+    _log_captured_pre = game.board.piece_at(to_sq[0], to_sq[1])
+    _log_rows         = game.board.rows
+
     # Dice mode: intercept captures before they happen
     if _options["dice_mode"] and dest_piece is not None:
         # Validate legality first (so illegal moves still bounce back silently)
@@ -721,6 +773,7 @@ def attempt_move(game, selected_sq, to_sq, theme_index):
         if not moved:
             return selected_sq, to_sq  # illegal: keep selection, move cursor
 
+    _log_move(move, _log_piece_pre, _log_captured_pre, _log_rows, len(game.move_history) - 1)
     screen = pygame.display.get_surface()
     _check_game_over(game, screen, theme_index)
     apply_ai_move_if_needed(game, screen=screen, theme_index=theme_index)
@@ -933,6 +986,8 @@ def _parse_args(argv):
                    help="print PGN to stdout on quit (8x8 only)")
     p.add_argument("--coords", action="store_true",
                    help="show file letters and rank numbers around the board")
+    p.add_argument("--debug", action="store_true",
+                   help="print verbose move info (piece, captures, AI timing) to terminal")
     return p.parse_args(argv)
 
 def _resolve_initial_theme(args):
@@ -971,6 +1026,7 @@ def main(argv=None):
     load_options()  # Load persisted options first
     _options["ai_enabled"] = not args.no_ai
     _options["ai_depth"] = args.ai_depth
+    _options["debug"] = args.debug
     if args.coords:  # CLI --coords overrides saved setting
         _options["show_coords"] = args.coords
 
