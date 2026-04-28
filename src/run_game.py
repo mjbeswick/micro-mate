@@ -544,6 +544,14 @@ def apply_ai_move_if_needed(game, screen=None, theme_index=DEFAULT_THEME_INDEX):
     ai_time = time.monotonic() - t0
     if ai_move is None:
         return
+    if screen is not None:
+        MIN_AI_THINK_S = 0.4
+        remaining = MIN_AI_THINK_S - ai_time
+        if remaining > 0:
+            deadline = time.monotonic() + remaining
+            while time.monotonic() < deadline:
+                pygame.event.pump()
+                pygame.time.wait(10)
     if _options["dice_mode"] and screen is not None:
         dest_piece = game.board.piece_at(ai_move.to_sq[0], ai_move.to_sq[1])
         if dest_piece is not None:
