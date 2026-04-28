@@ -1,6 +1,7 @@
 """Entry point for Micro-Mate."""
 import argparse
 import json
+import math
 import random
 import re
 import sys
@@ -251,7 +252,6 @@ def _draw_background_for_modal(screen, game, theme_index):
             game.board,
             theme_index=theme_index,
             show_coords=_options["show_coords"],
-            right_panel=ADV_BAR_W,
         )
     # Draw blur overlay on top
     overlay = _blur_screen(screen)
@@ -437,7 +437,7 @@ def show_new_game_modal(screen, theme_index, allow_cancel=False, allow_continue=
             border_each = max(18, base_window // 28) if show_coords_preview else 0
             inner = max(80, base_window - 2 * border_each)
             cell = max(40, min(inner // selected_cols, inner // selected_rows))
-            target_w = cell * selected_cols + 2 * border_each + ADV_BAR_W
+            target_w = cell * selected_cols + 2 * border_each
             target_h = cell * selected_rows + 2 * border_each
             if screen.get_size() != (target_w, target_h):
                 _sm = set_mode or (lambda sz: pygame.display.set_mode(sz, pygame.RESIZABLE))
@@ -459,7 +459,6 @@ def show_new_game_modal(screen, theme_index, allow_cancel=False, allow_continue=
                 piece_surfaces=piece_surfaces,
                 theme_index=theme_index,
                 show_coords=show_coords_preview,
-                right_panel=ADV_BAR_W,
             )
         except Exception as e:
             # Silently handle errors in preview to not crash the modal
@@ -469,10 +468,25 @@ def show_new_game_modal(screen, theme_index, allow_cancel=False, allow_continue=
     _dbg(f"modal closed: New Game → {result['value']}")
     return result["value"]
 
+def _render_adv_bar_surface(eval_score, width, height):
+    """Horizontal advantage bar: black left, white right, split by win probability."""
+    capped = max(-2000.0, min(2000.0, float(eval_score)))
+    p_white = 1.0 / (1.0 + math.exp(-capped / 400.0))
+    surf = pygame.Surface((width, height))
+    black_w = int(width * (1.0 - p_white))
+    white_w = width - black_w
+    if black_w > 0:
+        pygame.draw.rect(surf, (28, 28, 28), (0, 0, black_w, height))
+    if white_w > 0:
+        pygame.draw.rect(surf, (218, 218, 212), (black_w, 0, white_w, height))
+    pygame.draw.rect(surf, (110, 110, 110), (0, 0, width, height), 1)
+    return surf, p_white
+
+
 def show_game_menu_modal(screen, game, theme_index):
     """Show Quit / Resume / New Game options over the running game. Returns 'exit', 'continue', or 'new'."""
     _dbg("modal open: Game Menu")
-    from thorpy.elements import TitleBox, Button, Group, Text
+    from thorpy.elements import TitleBox, Button, Group, Text, SingleStateImage
     _configure_thorpy_for_modal(screen, theme_index)
 
     result = {"value": "continue"}
@@ -493,6 +507,18 @@ def show_game_menu_modal(screen, game, theme_index):
     line2 = Text("What would you like to do?")
     msg_group = Group([line1, line2], "v", gap=8, align="center", margins=(8, 6))
 
+    # Advantage bar
+    w = screen.get_width()
+    bar_w = max(120, min(240, int(w * 0.38)))
+    bar_h = max(12, min(20, int(w * 0.025)))
+    eval_score = game.board.evaluate(pseudo_legal=_options.get("dice_mode", False))
+    bar_surf, p_white = _render_adv_bar_surface(eval_score, bar_w, bar_h)
+    bar_img = SingleStateImage(bar_surf)
+    pct_w = int(p_white * 100)
+    pct_b = 100 - pct_w
+    adv_label = Text(f"White {pct_w}%  •  Black {pct_b}%")
+    adv_group = Group([bar_img, adv_label], "v", gap=4, align="center", margins=(8, 4))
+
     quit_btn = Button("Quit")
     quit_btn.at_unclick = on_exit
     resume_btn = Button("Resume")
@@ -502,7 +528,7 @@ def show_game_menu_modal(screen, game, theme_index):
 
     buttons = Group([quit_btn, resume_btn, new_btn], "h", align="center", margins=(8, 10))
 
-    box = TitleBox("Paused", children=[msg_group, buttons])
+    box = TitleBox("Paused", children=[msg_group, adv_group, buttons])
     box.center_on(screen)
     _make_modal_transparent(box)
 
@@ -640,7 +666,7 @@ def _fit_window_to_board(screen, base_size, board, set_mode=None):
     border_each = max(18, base_size // 28) if _options["show_coords"] else 0
     inner = max(80, base_size - 2 * border_each)
     cell = max(40, min(inner // board.cols, inner // board.rows))
-    target_w = cell * board.cols + 2 * border_each + ADV_BAR_W
+    target_w = cell * board.cols + 2 * border_each
     target_h = cell * board.rows + 2 * border_each
     max_w, max_h = _max_window_size()
     if target_w > max_w or target_h > max_h:
@@ -961,7 +987,7 @@ def attempt_move(game, selected_sq, to_sq, theme_index):
 def handle_mousedown(game, screen, pos, selected_sq, cursor_sq, theme_index):
     """Handle mouse click. Returns (new_selected_sq, new_cursor_sq)."""
     sq = pixel_to_square(screen.get_size(), game.board, pos[0], pos[1],
-                         show_coords=_options["show_coords"], right_panel=ADV_BAR_W)
+                         show_coords=_options["show_coords"])
     if sq is None:
         return None, cursor_sq  # click outside board — deselect
 
@@ -1348,7 +1374,7 @@ def main(argv=None):
                             _last_click["time"] = now
                             _last_click["pos"] = ev.pos
                             sq = pixel_to_square(screen.get_size(), game.board, ev.pos[0], ev.pos[1],
-                                                 show_coords=_options["show_coords"], right_panel=ADV_BAR_W)
+                                                 show_coords=_options["show_coords"])
                             _dbg(f"event: click at {ev.pos} → sq={sq}")
                             selected_sq, cursor_sq = handle_mousedown(
                                 game, screen, ev.pos, selected_sq, cursor_sq, theme_index
@@ -1364,10 +1390,10 @@ def main(argv=None):
                     # Treat near-desktop sizes as "maximized" and leave them alone.
                     is_maximized = new_w >= int(desk_w * 0.95) or new_h >= int(desk_h * 0.95)
                     if not is_maximized:
-                        # Keep window square: use the larger dimension (excluding bar)
-                        side = max(new_w - ADV_BAR_W, new_h)
+                        # Keep window square: use the larger dimension
+                        side = max(new_w, new_h)
                         cell = max(40, min(side // game.board.cols, side // game.board.rows))
-                        new_w = cell * game.board.cols + ADV_BAR_W
+                        new_w = cell * game.board.cols
                         new_h = cell * game.board.rows
                     if (new_w, new_h) != size:
                         size = (new_w, new_h)
@@ -1385,12 +1411,6 @@ def main(argv=None):
                 current_turn=game.turn,
                 show_coords=_options["show_coords"],
                 king_in_check_sq=None if _options["dice_mode"] else game.get_king_check_square(),
-                right_panel=ADV_BAR_W,
-            )
-            draw_advantage_bar(
-                screen,
-                game.board.evaluate(pseudo_legal=_options["dice_mode"]),
-                game.board, theme_index, _options["show_coords"],
             )
             # Phase 7: Help modal via thorpy (called when show_help=True)
             if show_help:
