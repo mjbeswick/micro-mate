@@ -256,7 +256,7 @@ def _draw_background_for_modal(screen, game, theme_index):
 def _strength_label(depth):
     return {1: "casual", 2: "easy", 3: "normal", 4: "strong", 5: "tough"}.get(depth, "")
 
-def show_new_game_modal(screen, theme_index, allow_cancel=False,
+def show_new_game_modal(screen, theme_index, allow_cancel=False, allow_continue=False,
                         current_size=None, current_depth=None, piece_surfaces=None,
                         base_window=720):
     """Pick board size, AI strength, game mode, and color via thorpy. Returns (rows, cols, depth, mode, color) or None."""
@@ -364,11 +364,19 @@ def show_new_game_modal(screen, theme_index, allow_cancel=False,
         result["value"] = "quit"
         tp.loops.quit_current_loop()
     
+    def on_continue():
+        result["value"] = None
+        tp.loops.quit_current_loop()
+
     start_btn = Button("Start")
     start_btn.at_unclick = on_start
-    
-    cancel_btn = Button("Quit") if allow_cancel else None
-    if cancel_btn:
+
+    if allow_continue:
+        continue_btn = Button("Continue")
+        continue_btn.at_unclick = on_continue
+        buttons = Group([continue_btn, start_btn], "h")
+    elif allow_cancel:
+        cancel_btn = Button("Quit")
         cancel_btn.at_unclick = on_cancel
         buttons = Group([cancel_btn, start_btn], "h")
     else:
@@ -1184,8 +1192,10 @@ def main(argv=None):
 
     def _open_new_game(running):
         nonlocal game, screen, size, selected_sq, cursor_sq
+        game_has_moves = bool(game.move_history)
         result = show_new_game_modal(
-            screen, theme_index, allow_cancel=True,
+            screen, theme_index, allow_cancel=not game_has_moves,
+            allow_continue=game_has_moves,
             current_size=(game.board.rows, game.board.cols),
             current_depth=_options["ai_depth"],
             piece_surfaces=piece_surfaces,
