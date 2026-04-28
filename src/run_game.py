@@ -452,20 +452,25 @@ def show_new_game_modal(screen, theme_index, allow_cancel=False,
     return result["value"]
 
 def show_checkmate_modal(screen, game, theme_index, loser_color):
-    """Display checkmate modal announcing the winner."""
+    """Display game-over modal announcing the winner."""
     winner = "White" if loser_color == 'b' else "Black"
-    _dbg(f"modal open: Checkmate ({winner} wins)")
+    loser  = "Black" if loser_color == 'b' else "White"
+    _dbg(f"modal open: Game Over ({winner} wins)")
     from thorpy.elements import TitleBox, Text, Button
     _configure_thorpy_for_modal(screen, theme_index)
 
-    winner = "White" if loser_color == 'b' else "Black"
-    loser  = "Black" if loser_color == 'b' else "White"
+    if _options["dice_mode"]:
+        title = "King Captured!"
+        body  = f"{winner} wins!\n{winner} captured the {loser} King."
+    else:
+        title = "Checkmate"
+        body  = f"{winner} wins!\n{loser} is checkmated."
 
-    msg_text = Text(f"{winner} wins!\n{loser} is checkmated.")
+    msg_text = Text(body)
     ok_btn = Button("OK")
     ok_btn.at_unclick = lambda: tp.loops.quit_current_loop()
 
-    box = TitleBox("Checkmate", children=[msg_text, ok_btn])
+    box = TitleBox(title, children=[msg_text, ok_btn])
     box.center_on(screen)
     _make_modal_transparent(box)
 
@@ -482,27 +487,39 @@ def show_checkmate_modal(screen, game, theme_index, loser_color):
 HUMAN_COLOR = 'w'
 
 def _check_game_over(game, screen, theme_index):
-    """Show checkmate modal if the current player has no legal moves and is in check."""
-    if game.get_legal_moves():
-        return
-    if game.board._is_in_check(game.turn):
-        # Pause so the player can see the final position before the modal appears.
-        _render_board_now(screen, game, theme_index)
-        deadline = time.monotonic() + 0.5
-        while time.monotonic() < deadline:
-            pygame.event.pump()
-            pygame.time.wait(10)
-        show_checkmate_modal(screen, game, theme_index, loser_color=game.turn)
+    """Show end-of-game modal when the game is decided."""
+    if _options["dice_mode"]:
+        # King-capture mode: game ends when a king is physically taken.
+        if not game.board.bb['w']['K']:
+            _pause_for_final_position(screen, game, theme_index)
+            show_checkmate_modal(screen, game, theme_index, loser_color='w')
+        elif not game.board.bb['b']['K']:
+            _pause_for_final_position(screen, game, theme_index)
+            show_checkmate_modal(screen, game, theme_index, loser_color='b')
+    else:
+        if game.get_legal_moves():
+            return
+        if game.board._is_in_check(game.turn):
+            _pause_for_final_position(screen, game, theme_index)
+            show_checkmate_modal(screen, game, theme_index, loser_color=game.turn)
+
+def _pause_for_final_position(screen, game, theme_index):
+    """Render the board once and wait 500ms so the player sees the final position."""
+    _render_board_now(screen, game, theme_index)
+    deadline = time.monotonic() + 0.5
+    while time.monotonic() < deadline:
+        pygame.event.pump()
+        pygame.time.wait(10)
 
 def _movable_squares(game):
     """Set of from-squares the current player can move from this turn."""
-    return {m.from_sq for m in game.get_legal_moves()}
+    return {m.from_sq for m in game.get_legal_moves(pseudo_legal=_options["dice_mode"])}
 
 def _legal_targets(game, from_sq):
     """Squares the piece on from_sq can legally move to (plus from_sq itself for deselect)."""
     if from_sq is None:
         return set()
-    targets = {m.to_sq for m in game.get_legal_moves() if m.from_sq == from_sq}
+    targets = {m.to_sq for m in game.get_legal_moves(pseudo_legal=_options["dice_mode"]) if m.from_sq == from_sq}
     targets.add(from_sq)
     return targets
 
@@ -565,9 +582,10 @@ def apply_ai_move_if_needed(game, screen=None, theme_index=DEFAULT_THEME_INDEX):
         return
     if game.turn == HUMAN_COLOR:
         return
-    if not game.get_legal_moves():
+    dice = _options["dice_mode"]
+    if not game.get_legal_moves(pseudo_legal=dice):
         return
-    if screen is not None and _options.get("dice_mode"):
+    if screen is not None and dice:
         deadline = time.monotonic() + 0.3
         while time.monotonic() < deadline:
             pygame.event.pump()
@@ -575,9 +593,9 @@ def apply_ai_move_if_needed(game, screen=None, theme_index=DEFAULT_THEME_INDEX):
             pygame.time.wait(10)
     t0 = time.monotonic()
     if screen is None:
-        ai_move = game.get_ai_move()
+        ai_move = game.get_ai_move(pseudo_legal=dice)
     else:
-        ai_move = _run_ai_with_modal(game, screen, theme_index)
+        ai_move = _run_ai_with_modal(game, screen, theme_index, pseudo_legal=dice)
     ai_time = time.monotonic() - t0
     if ai_move is None:
         return
@@ -590,7 +608,7 @@ def apply_ai_move_if_needed(game, screen=None, theme_index=DEFAULT_THEME_INDEX):
                 pygame.event.pump()
                 _render_board_now(screen, game, theme_index)
                 pygame.time.wait(10)
-    if _options["dice_mode"] and screen is not None:
+    if dice and screen is not None:
         dest_piece = game.board.piece_at(ai_move.to_sq[0], ai_move.to_sq[1])
         if dest_piece is not None:
             atk_piece  = game.board.piece_at(ai_move.from_sq[0], ai_move.from_sq[1])
@@ -606,20 +624,20 @@ def apply_ai_move_if_needed(game, screen=None, theme_index=DEFAULT_THEME_INDEX):
     _log_piece    = game.board.piece_at(ai_move.from_sq[0], ai_move.from_sq[1])
     _log_captured = game.board.piece_at(ai_move.to_sq[0],   ai_move.to_sq[1])
     _log_rows     = game.board.rows
-    game.make_move(ai_move)
+    game.make_move(ai_move, pseudo_legal=dice)
     _log_move(ai_move, _log_piece, _log_captured, _log_rows,
               len(game.move_history) - 1,
               ai_time=ai_time if _options["debug"] else None)
     if screen is not None:
         _check_game_over(game, screen, theme_index)
 
-def _run_ai_with_modal(game, screen, theme_index):
+def _run_ai_with_modal(game, screen, theme_index, pseudo_legal: bool = False):
     stop_event = threading.Event()
     result = {"move": None, "error": None}
 
     def worker():
         try:
-            result["move"] = game.get_ai_move(stop_event=stop_event)
+            result["move"] = game.get_ai_move(stop_event=stop_event, pseudo_legal=pseudo_legal)
         except Exception as exc:  # surface any engine error
             result["error"] = exc
 
@@ -818,11 +836,13 @@ def attempt_move(game, selected_sq, to_sq, theme_index):
     _log_captured_pre = game.board.piece_at(to_sq[0], to_sq[1])
     _log_rows         = game.board.rows
 
+    dice = _options["dice_mode"]
+
     # Dice mode: intercept captures before they happen
-    if _options["dice_mode"] and dest_piece is not None:
-        # Validate legality first (so illegal moves still bounce back silently)
-        legal = board.legal_moves(game.turn)
-        if not any(m.from_sq == move.from_sq and m.to_sq == move.to_sq for m in legal):
+    if dice and dest_piece is not None:
+        # Validate using pseudo-legal moves (check is not enforced in dice mode)
+        pseudo_moves = board.pseudo_legal_moves(game.turn)
+        if not any(m.from_sq == move.from_sq and m.to_sq == move.to_sq for m in pseudo_moves):
             return selected_sq, to_sq
         screen = pygame.display.get_surface()
         proceed = _attempt_capture_with_dice(game, move, piece, dest_piece, screen, theme_index)
@@ -832,9 +852,9 @@ def attempt_move(game, selected_sq, to_sq, theme_index):
             apply_ai_move_if_needed(game, screen=screen, theme_index=theme_index)
             return None, to_sq
         # Attacker won: fall through and execute the capture normally
-        moved = game.make_move(move)
+        moved = game.make_move(move, pseudo_legal=dice)
     else:
-        moved = game.make_move(move)
+        moved = game.make_move(move, pseudo_legal=dice)
         if not moved:
             return selected_sq, to_sq  # illegal: keep selection, move cursor
 
@@ -1243,7 +1263,7 @@ def main(argv=None):
                 cursor_sq=cursor_sq,
                 current_turn=game.turn,
                 show_coords=_options["show_coords"],
-                king_in_check_sq=game.get_king_check_square(),
+                king_in_check_sq=None if _options["dice_mode"] else game.get_king_check_square(),
             )
             # Phase 7: Help modal via thorpy (called when show_help=True)
             if show_help:

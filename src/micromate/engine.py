@@ -127,6 +127,19 @@ class Board:
                 tmp ^= lsb
         return [m for m in moves if self._is_legal_move(m, color)]
 
+    def pseudo_legal_moves(self, color: str) -> List[Move]:
+        """All moves for color without the 'own king left in check' filter."""
+        moves = []
+        for kind in _KINDS:
+            tmp = self.bb[color][kind]
+            while tmp:
+                lsb = tmp & (-tmp)
+                sq = lsb.bit_length() - 1
+                r, c = divmod(sq, self.cols)
+                moves.extend(self._piece_moves(r, c, kind, color))
+                tmp ^= lsb
+        return moves
+
     def _piece_moves(self, r: int, c: int, kind: str, color: str) -> List[Move]:
         if kind == 'P':
             return self._pawn_moves(r, c, color)
@@ -343,8 +356,9 @@ class AI:
     def __init__(self, depth=3):
         self.depth = depth
 
-    def best_move(self, board: "Board", color: str, stop_event=None) -> Optional[Move]:
-        moves = board.legal_moves(color)
+    def best_move(self, board: "Board", color: str, stop_event=None,
+                  pseudo_legal: bool = False) -> Optional[Move]:
+        moves = board.pseudo_legal_moves(color) if pseudo_legal else board.legal_moves(color)
         if not moves:
             return None
         moves.sort(key=lambda m: board.piece_at(m.to_sq[0], m.to_sq[1]) is not None, reverse=True)
@@ -355,7 +369,8 @@ class AI:
                 if stop_event is not None and stop_event.is_set():
                     break
                 captured = board._make_move_unsafe(move)
-                score = self._minimax(board, self.depth - 1, float('-inf'), float('inf'), False, stop_event)
+                score = self._minimax(board, self.depth - 1, float('-inf'), float('inf'), False,
+                                      stop_event, pseudo_legal)
                 board._undo_move_unsafe(move, captured)
                 if score > best_score:
                     best_score, best = score, move
@@ -365,22 +380,31 @@ class AI:
                 if stop_event is not None and stop_event.is_set():
                     break
                 captured = board._make_move_unsafe(move)
-                score = self._minimax(board, self.depth - 1, float('-inf'), float('inf'), True, stop_event)
+                score = self._minimax(board, self.depth - 1, float('-inf'), float('inf'), True,
+                                      stop_event, pseudo_legal)
                 board._undo_move_unsafe(move, captured)
                 if score < best_score:
                     best_score, best = score, move
         return best
 
     def _minimax(self, board: "Board", depth: int, alpha: float, beta: float,
-                 is_maximizing: bool, stop_event=None) -> float:
+                 is_maximizing: bool, stop_event=None, pseudo_legal: bool = False) -> float:
+        if pseudo_legal:
+            # King captured = terminal win/loss regardless of depth
+            if not board.bb['b']['K']:
+                return float('inf')
+            if not board.bb['w']['K']:
+                return float('-inf')
         if depth == 0:
-            return self._evaluate(board)
+            return self._evaluate(board, pseudo_legal)
         if stop_event is not None and stop_event.is_set():
-            return self._evaluate(board)
+            return self._evaluate(board, pseudo_legal)
         color = 'w' if is_maximizing else 'b'
-        moves = board.legal_moves(color)
+        moves = board.pseudo_legal_moves(color) if pseudo_legal else board.legal_moves(color)
         moves.sort(key=lambda m: board.piece_at(m.to_sq[0], m.to_sq[1]) is not None, reverse=True)
         if not moves:
+            if pseudo_legal:
+                return 0  # no moves = stalemate
             return (float('-inf') if is_maximizing else float('inf')) if board._is_in_check(color) else 0
         if is_maximizing:
             max_score = float('-inf')
@@ -388,7 +412,7 @@ class AI:
                 if stop_event is not None and stop_event.is_set():
                     break
                 captured = board._make_move_unsafe(move)
-                score = self._minimax(board, depth - 1, alpha, beta, False, stop_event)
+                score = self._minimax(board, depth - 1, alpha, beta, False, stop_event, pseudo_legal)
                 board._undo_move_unsafe(move, captured)
                 if score > max_score:
                     max_score = score
@@ -402,7 +426,7 @@ class AI:
                 if stop_event is not None and stop_event.is_set():
                     break
                 captured = board._make_move_unsafe(move)
-                score = self._minimax(board, depth - 1, alpha, beta, True, stop_event)
+                score = self._minimax(board, depth - 1, alpha, beta, True, stop_event, pseudo_legal)
                 board._undo_move_unsafe(move, captured)
                 if score < min_score:
                     min_score = score
@@ -411,9 +435,12 @@ class AI:
                     break
             return min_score
 
-    def _evaluate(self, board: "Board") -> float:
+    def _evaluate(self, board: "Board", pseudo_legal: bool = False) -> float:
         """Material-only eval via popcount — positive = white advantage."""
-        vals = {'P': 100, 'N': 300, 'B': 300, 'R': 500, 'Q': 900, 'K': 0}
+        # In king-capture mode give the king an extreme value so the AI treats
+        # capturing / losing it as the dominant objective.
+        king_val = 100_000 if pseudo_legal else 0
+        vals = {'P': 100, 'N': 300, 'B': 300, 'R': 500, 'Q': 900, 'K': king_val}
         score = 0
         for kind, val in vals.items():
             score += val * bin(board.bb['w'][kind]).count('1')
@@ -496,7 +523,9 @@ class Game:
         self.ai = AI(depth=self.ai_depth)
         self._king_check_valid = False
 
-    def get_legal_moves(self) -> List[Move]:
+    def get_legal_moves(self, pseudo_legal: bool = False) -> List[Move]:
+        if pseudo_legal:
+            return self.board.pseudo_legal_moves(self.turn)
         return self.board.legal_moves(self.turn)
 
     def get_king_check_square(self) -> Optional[tuple]:
@@ -510,15 +539,16 @@ class Game:
             self._king_check_valid = True
         return self._king_check_sq
 
-    def get_ai_move(self, stop_event=None) -> Optional[Move]:
+    def get_ai_move(self, stop_event=None, pseudo_legal: bool = False) -> Optional[Move]:
         """Return AI's best move searched on a scratch copy of the board."""
         scratch = Board(self.board.rows, self.board.cols)
         scratch.bb = self._clone_bb()
-        return self.ai.best_move(scratch, self.turn, stop_event=stop_event)
+        return self.ai.best_move(scratch, self.turn, stop_event=stop_event,
+                                 pseudo_legal=pseudo_legal)
 
-    def make_move(self, move: Move) -> bool:
-        legal = self.board.legal_moves(self.turn)
-        if not any(m.from_sq == move.from_sq and m.to_sq == move.to_sq for m in legal):
+    def make_move(self, move: Move, pseudo_legal: bool = False) -> bool:
+        moves = self.board.pseudo_legal_moves(self.turn) if pseudo_legal else self.board.legal_moves(self.turn)
+        if not any(m.from_sq == move.from_sq and m.to_sq == move.to_sq for m in moves):
             return False
         if self._history_index < len(self._history) - 1:
             self.move_history = self.move_history[:self._history_index]
