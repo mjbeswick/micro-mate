@@ -22,6 +22,18 @@ class GameSnapshot:
 
 _KINDS = ('P', 'N', 'B', 'R', 'Q', 'K')
 
+# Dice mode: each combatant rolls 1d6.
+#   attacker > defender → capture succeeds (15 / 36)
+#   attacker < defender → attacker is destroyed (15 / 36)
+#   attacker = defender → blocked, no change, turn passes (6 / 36)
+DICE_P_WIN = 15 / 36
+DICE_P_LOSE = 15 / 36
+DICE_P_BLOCK = 6 / 36
+
+# King-capture terminal score in pseudo-legal (dice) search. Finite so that
+# expectiminimax arithmetic over chance nodes never produces inf - inf = nan.
+KING_CAPTURED_VAL = 10_000_000
+
 def _empty_bb():
     return {'w': {k: 0 for k in _KINDS}, 'b': {k: 0 for k in _KINDS}}
 
@@ -359,6 +371,26 @@ class Board:
         if captured:
             self.bb[captured.color][captured.kind] |= tb
 
+    def _make_attacker_loss_unsafe(self, move: Move) -> Piece:
+        """Dice combat: attacker loses — clear the piece on its origin square.
+        Defender untouched. Returns the removed piece so undo can restore it."""
+        r_f, c_f = move.from_sq
+        fb = 1 << (r_f * self.cols + c_f)
+        bb_w = self.bb['w']
+        occ_w = bb_w['P'] | bb_w['N'] | bb_w['B'] | bb_w['R'] | bb_w['Q'] | bb_w['K']
+        if occ_w & fb:
+            piece_bb, color = bb_w, 'w'
+        else:
+            piece_bb, color = self.bb['b'], 'b'
+        kind = next(k for k, bb in piece_bb.items() if bb & fb)
+        piece_bb[kind] ^= fb
+        return Piece(kind, color)
+
+    def _undo_attacker_loss_unsafe(self, move: Move, piece: Piece) -> None:
+        r_f, c_f = move.from_sq
+        fb = 1 << (r_f * self.cols + c_f)
+        self.bb[piece.color][piece.kind] |= fb
+
 
 class AI:
     """Minimax with alpha-beta pruning. Eval is from white's POV."""
@@ -373,38 +405,64 @@ class AI:
             return None
         moves.sort(key=lambda m: board.piece_at(m.to_sq[0], m.to_sq[1]) is not None, reverse=True)
         best = moves[0]
-        if color == 'w':
-            best_score = float('-inf')
-            for move in moves:
-                if stop_event is not None and stop_event.is_set():
-                    break
-                captured = board._make_move_unsafe(move)
-                score = self._minimax(board, self.depth - 1, float('-inf'), float('inf'), False,
-                                      stop_event, pseudo_legal)
-                board._undo_move_unsafe(move, captured)
+        is_max = (color == 'w')
+        best_score = float('-inf') if is_max else float('inf')
+        for move in moves:
+            if stop_event is not None and stop_event.is_set():
+                break
+            score = self._score_move(board, move, self.depth - 1, float('-inf'), float('inf'),
+                                     not is_max, stop_event, pseudo_legal)
+            if is_max:
                 if score > best_score:
                     best_score, best = score, move
-        else:
-            best_score = float('inf')
-            for move in moves:
-                if stop_event is not None and stop_event.is_set():
-                    break
-                captured = board._make_move_unsafe(move)
-                score = self._minimax(board, self.depth - 1, float('-inf'), float('inf'), True,
-                                      stop_event, pseudo_legal)
-                board._undo_move_unsafe(move, captured)
+            else:
                 if score < best_score:
                     best_score, best = score, move
         return best
 
+    def _score_move(self, board: "Board", move: Move, depth: int, alpha: float, beta: float,
+                    next_is_maximizing: bool, stop_event, pseudo_legal: bool) -> float:
+        """Score `move` from the parent node's POV. In dice mode, captures
+        expand into a chance node over the three combat outcomes."""
+        is_capture = board.piece_at(move.to_sq[0], move.to_sq[1]) is not None
+        if pseudo_legal and is_capture:
+            return self._capture_chance_value(board, move, depth, next_is_maximizing, stop_event)
+        captured = board._make_move_unsafe(move)
+        score = self._minimax(board, depth, alpha, beta, next_is_maximizing, stop_event, pseudo_legal)
+        board._undo_move_unsafe(move, captured)
+        return score
+
+    def _capture_chance_value(self, board: "Board", move: Move, depth: int,
+                              next_is_maximizing: bool, stop_event) -> float:
+        """Expectiminimax over the three dice outcomes of a capture.
+        Children use a full alpha/beta window — pruning across chance siblings
+        would require star-pruning, not worth the complexity for 3 outcomes."""
+        NEG, POS = float('-inf'), float('inf')
+
+        # 1. Attacker wins — capture succeeds.
+        captured = board._make_move_unsafe(move)
+        s_win = self._minimax(board, depth, NEG, POS, next_is_maximizing, stop_event, True)
+        board._undo_move_unsafe(move, captured)
+
+        # 2. Attacker loses — attacker piece destroyed on its origin.
+        lost = board._make_attacker_loss_unsafe(move)
+        s_lose = self._minimax(board, depth, NEG, POS, next_is_maximizing, stop_event, True)
+        board._undo_attacker_loss_unsafe(move, lost)
+
+        # 3. Blocked — board unchanged, turn still passes.
+        s_block = self._minimax(board, depth, NEG, POS, next_is_maximizing, stop_event, True)
+
+        return DICE_P_WIN * s_win + DICE_P_LOSE * s_lose + DICE_P_BLOCK * s_block
+
     def _minimax(self, board: "Board", depth: int, alpha: float, beta: float,
                  is_maximizing: bool, stop_event=None, pseudo_legal: bool = False) -> float:
         if pseudo_legal:
-            # King captured = terminal win/loss regardless of depth
+            # King captured = terminal win/loss regardless of depth.
+            # Use a finite large value so chance-node arithmetic stays well-defined.
             if not board.bb['b']['K']:
-                return float('inf')
+                return KING_CAPTURED_VAL
             if not board.bb['w']['K']:
-                return float('-inf')
+                return -KING_CAPTURED_VAL
         if depth == 0:
             return self._evaluate(board, pseudo_legal)
         if stop_event is not None and stop_event.is_set():
@@ -421,9 +479,7 @@ class AI:
             for move in moves:
                 if stop_event is not None and stop_event.is_set():
                     break
-                captured = board._make_move_unsafe(move)
-                score = self._minimax(board, depth - 1, alpha, beta, False, stop_event, pseudo_legal)
-                board._undo_move_unsafe(move, captured)
+                score = self._score_move(board, move, depth - 1, alpha, beta, False, stop_event, pseudo_legal)
                 if score > max_score:
                     max_score = score
                 alpha = max(alpha, score)
@@ -435,9 +491,7 @@ class AI:
             for move in moves:
                 if stop_event is not None and stop_event.is_set():
                     break
-                captured = board._make_move_unsafe(move)
-                score = self._minimax(board, depth - 1, alpha, beta, True, stop_event, pseudo_legal)
-                board._undo_move_unsafe(move, captured)
+                score = self._score_move(board, move, depth - 1, alpha, beta, True, stop_event, pseudo_legal)
                 if score < min_score:
                     min_score = score
                 beta = min(beta, score)
