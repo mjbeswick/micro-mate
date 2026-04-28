@@ -64,7 +64,8 @@ _toast_cache = {"text": None, "theme_index": None, "surface": None, "label_rect"
 def _dbg(msg):
     """Print a timestamped debug line when --debug is active."""
     if _options.get("debug"):
-        ts = time.strftime("%H:%M:%S", time.localtime()) + f".{int(time.monotonic() * 1000) % 1000:03d}"
+        t = time.time()
+        ts = time.strftime("%H:%M:%S", time.localtime(t)) + f".{int(t * 1000) % 1000:03d}"
         print(f"[{ts}] {msg}", flush=True)
 
 def _sq_to_alg(row, col, board_rows):
@@ -552,6 +553,8 @@ def apply_ai_move_if_needed(game, screen=None, theme_index=DEFAULT_THEME_INDEX):
         deadline = time.monotonic() + 0.5
         while time.monotonic() < deadline:
             pygame.event.pump()
+            _draw_background_for_modal(screen, game, theme_index)
+            pygame.display.flip()
             pygame.time.wait(10)
     t0 = time.monotonic()
     if screen is None:
@@ -568,6 +571,8 @@ def apply_ai_move_if_needed(game, screen=None, theme_index=DEFAULT_THEME_INDEX):
             deadline = time.monotonic() + remaining
             while time.monotonic() < deadline:
                 pygame.event.pump()
+                _draw_background_for_modal(screen, game, theme_index)
+                pygame.display.flip()
                 pygame.time.wait(10)
     if _options["dice_mode"] and screen is not None:
         dest_piece = game.board.piece_at(ai_move.to_sq[0], ai_move.to_sq[1])
