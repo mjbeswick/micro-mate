@@ -757,6 +757,7 @@ def show_combat_roll_modal(screen, game, atk_piece, def_piece, atk_roll, def_rol
     _last_size = [screen.get_size()]
     start_time = time.monotonic()
     settled = [False]
+    _last_countdown = [None]
 
     def draw_bg():
         _draw_background_for_modal(screen, game, theme_index)
@@ -768,8 +769,6 @@ def show_combat_roll_modal(screen, game, atk_piece, def_piece, atk_roll, def_rol
             new_h = max(240, min(320, int(min(w2, h2) * 0.40)))
             box.set_size((new_w, new_h))
             box.center_on(screen)
-        else:
-            box.set_size((modal_w, modal_h))
 
         elapsed = time.monotonic() - start_time
 
@@ -789,7 +788,10 @@ def show_combat_roll_modal(screen, game, atk_piece, def_piece, atk_roll, def_rol
             if remaining <= 0:
                 tp.loops.quit_current_loop()
             else:
-                ok_btn.set_text(f"OK ({int(remaining) + 1})")
+                countdown = int(remaining) + 1
+                if countdown != _last_countdown[0]:
+                    ok_btn.set_text(f"OK ({countdown})")
+                    _last_countdown[0] = countdown
 
     box.launch_alone(func_before=draw_bg, click_outside_cancel=True)
     _dbg("modal closed: Combat Roll")
