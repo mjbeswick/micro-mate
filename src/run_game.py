@@ -187,7 +187,8 @@ def _strength_label(depth):
     return {1: "casual", 2: "easy", 3: "normal", 4: "strong", 5: "tough"}.get(depth, "")
 
 def show_new_game_modal(screen, theme_index, allow_cancel=False,
-                        current_size=None, current_depth=None, piece_surfaces=None):
+                        current_size=None, current_depth=None, piece_surfaces=None,
+                        base_window=720):
     """Pick board size, AI strength, game mode, and color via thorpy. Returns (rows, cols, depth, mode, color) or None."""
     from thorpy.elements import TitleBox, TogglablesPool, Button, Group, Text, Box
     from micromate.engine import Game
@@ -322,13 +323,6 @@ def show_new_game_modal(screen, theme_index, allow_cancel=False,
     def draw_board_preview():
         """Redraw board with current selection before modal update."""
         try:
-            # Draw blur overlay behind modal
-            _draw_background_for_modal(screen, None, theme_index)
-
-            if screen.get_size() != _last_size[0]:
-                _last_size[0] = screen.get_size()
-                box.center_on(screen)
-
             # Check if size selection changed
             size_val = size_pool.get_value()
             if isinstance(size_val, str):
@@ -338,20 +332,38 @@ def show_new_game_modal(screen, theme_index, allow_cancel=False,
                     size_idx_val = size_idx  # fallback to initial
             else:
                 size_idx_val = size_val
-            
+
             # Ensure index is valid
             if size_idx_val >= len(sizes):
                 size_idx_val = size_idx
-            
+
             selected_rows, selected_cols = sizes[size_idx_val]
-            if (preview_state["game"].board.rows != selected_rows or 
-                preview_state["game"].board.cols != selected_cols):
+            if (preview_state["game"].board.rows != selected_rows or
+                    preview_state["game"].board.cols != selected_cols):
                 preview_state["game"] = Game(rows=selected_rows, cols=selected_cols)
-            
-            # Draw the board
-            theme = get_theme(theme_index)
+
+            # Resize window to match post-Start geometry before drawing so the
+            # board position in the preview is identical to what shows after Start.
             coords_val = coords_pool.get_value()
             show_coords_preview = (coords_val == "Yes") if isinstance(coords_val, str) else (coords_val == 0)
+            border_each = max(18, base_window // 28) if show_coords_preview else 0
+            inner = max(80, base_window - 2 * border_each)
+            cell = max(40, min(inner // selected_cols, inner // selected_rows))
+            target_w = cell * selected_cols + 2 * border_each
+            target_h = cell * selected_rows + 2 * border_each
+            if screen.get_size() != (target_w, target_h):
+                pygame.display.set_mode((target_w, target_h), pygame.RESIZABLE)
+                _last_size[0] = screen.get_size()
+                box.center_on(screen)
+
+            # Draw blur overlay behind modal (after any resize so it covers the right area)
+            _draw_background_for_modal(screen, None, theme_index)
+
+            if screen.get_size() != _last_size[0]:
+                _last_size[0] = screen.get_size()
+                box.center_on(screen)
+
+            # Draw the board
             draw_board(
                 screen,
                 preview_state["game"].board,
@@ -1008,6 +1020,7 @@ def main(argv=None):
             current_size=(game.board.rows, game.board.cols),
             current_depth=_options["ai_depth"],
             piece_surfaces=piece_surfaces,
+            base_window=base_window,
         )
         if result == "quit":
             return False
