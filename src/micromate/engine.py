@@ -57,6 +57,16 @@ class Board:
     def _set_piece(self, r, c, piece):
         self.bb[piece.color][piece.kind] |= self._bit(r, c)
 
+    def evaluate(self, pseudo_legal=False) -> float:
+        """Material-only eval: positive = white advantage (centipawns)."""
+        king_val = 100_000 if pseudo_legal else 0
+        vals = {'P': 100, 'N': 300, 'B': 300, 'R': 500, 'Q': 900, 'K': king_val}
+        score = 0.0
+        for kind, val in vals.items():
+            score += val * bin(self.bb['w'][kind]).count('1')
+            score -= val * bin(self.bb['b'][kind]).count('1')
+        return score
+
     @property
     def grid(self):
         """Reconstruct 2D grid from bitboards (used only for serialisation)."""

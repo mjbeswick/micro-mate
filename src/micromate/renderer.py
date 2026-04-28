@@ -1,10 +1,13 @@
 """Pygame renderer helper for micromate."""
+import math
 import os
 import io
 import sys
 import traceback
 import pygame
 from pathlib import Path
+
+ADV_BAR_W = 20  # pixels reserved on the right for the advantage bar
 
 _DEBUG_ASSETS = os.environ.get("MICROMATE_DEBUG_ASSETS") == "1"
 
@@ -220,22 +223,27 @@ def coord_border(screen_size, show_coords):
         return 0
     return max(18, min(screen_size) // 28)
 
-def board_geometry(screen_size, board, show_coords=False):
-    """Return (cell, x0, y0) — single source of truth for board layout."""
+def board_geometry(screen_size, board, show_coords=False, right_panel=0):
+    """Return (cell, x0, y0) — single source of truth for board layout.
+
+    right_panel reserves that many pixels on the right side of the window
+    (e.g. for the advantage bar) and keeps the board in the remaining area.
+    """
     w, h = screen_size
     border = coord_border(screen_size, show_coords)
-    inner_w = max(1, w - 2 * border)
+    inner_w = max(1, w - 2 * border - right_panel)
     inner_h = max(1, h - 2 * border)
     cell = min(inner_w // board.cols, inner_h // board.rows)
     board_w = cell * board.cols
     board_h = cell * board.rows
-    x0 = (w - board_w) // 2
+    x0 = border + (inner_w - board_w) // 2
     y0 = (h - board_h) // 2
     return cell, x0, y0
 
-def pixel_to_square(screen_size, board, px, py, show_coords=False):
+def pixel_to_square(screen_size, board, px, py, show_coords=False, right_panel=0):
     """Convert screen pixel to board (row, col). Returns None if outside board."""
-    cell, x0, y0 = board_geometry(screen_size, board, show_coords=show_coords)
+    cell, x0, y0 = board_geometry(screen_size, board, show_coords=show_coords,
+                                  right_panel=right_panel)
     col = (px - x0) // cell
     row = (py - y0) // cell
     if 0 <= row < board.rows and 0 <= col < board.cols:
@@ -292,9 +300,11 @@ def _draw_piece_fallback(screen, rect, piece, cell):
         pygame.draw.rect(screen, text_color, marker_rect, border_radius=max(2, marker_height // 2))
 
 def draw_board(screen, board, piece_surfaces=None, last_move=None, theme_index=DEFAULT_THEME_INDEX, padding=8,
-               selected_sq=None, cursor_sq=None, current_turn=None, show_coords=False, king_in_check_sq=None):
+               selected_sq=None, cursor_sq=None, current_turn=None, show_coords=False, king_in_check_sq=None,
+               right_panel=0):
     rows, cols = board.rows, board.cols
-    cell, x0, y0 = board_geometry(screen.get_size(), board, show_coords=show_coords)
+    cell, x0, y0 = board_geometry(screen.get_size(), board, show_coords=show_coords,
+                                  right_panel=right_panel)
     theme = get_theme(theme_index)
     border = coord_border(screen.get_size(), show_coords)
     colors = [theme["light_square"], theme["dark_square"]]
@@ -358,3 +368,54 @@ def draw_board(screen, board, piece_surfaces=None, last_move=None, theme_index=D
         _draw_coord_labels(screen, board, theme, cell, x0, y0, border)
 
 
+def draw_advantage_bar(screen, eval_score, board, theme_index, show_coords,
+                       right_panel=ADV_BAR_W):
+    """Draw a vertical win-probability bar in the right panel strip."""
+    if right_panel <= 0:
+        return
+    cell, x0, y0 = board_geometry(screen.get_size(), board, show_coords, right_panel)
+    board_h = cell * board.rows
+
+    # Sigmoid over capped eval (±2000 cp) so dice-mode extreme values stay sane
+    capped = max(-2000.0, min(2000.0, float(eval_score)))
+    p_white = 1.0 / (1.0 + math.exp(-capped / 400.0))
+
+    theme = get_theme(theme_index)
+    gap = 4
+    bar_x = x0 + cell * board.cols + gap
+    bar_y = y0
+    bar_w = screen.get_width() - bar_x - 2
+    bar_h = board_h
+
+    if bar_w <= 0 or bar_h <= 0:
+        return
+
+    white_h = max(0, min(bar_h, int(bar_h * p_white)))
+    black_h = bar_h - white_h
+
+    dark  = (28, 28, 28)
+    light = (218, 218, 212)
+
+    if black_h > 0:
+        pygame.draw.rect(screen, dark,  (bar_x, bar_y, bar_w, black_h))
+    if white_h > 0:
+        pygame.draw.rect(screen, light, (bar_x, bar_y + black_h, bar_w, white_h))
+
+    # Border
+    pygame.draw.rect(screen, theme["panel_border"], (bar_x, bar_y, bar_w, bar_h), 1)
+
+    # Percentage labels if there is enough vertical room in each section
+    font = _get_font(max(9, min(bar_w - 2, 12)), bold=False)
+    if font and bar_h >= 60:
+        pct_w = int(p_white * 100)
+        pct_b = 100 - pct_w
+        # White label (bottom section)
+        if white_h >= 16:
+            lbl = font.render(str(pct_w), True, dark)
+            screen.blit(lbl, lbl.get_rect(center=(bar_x + bar_w // 2,
+                                                   bar_y + black_h + white_h // 2)))
+        # Black label (top section)
+        if black_h >= 16:
+            lbl = font.render(str(pct_b), True, light)
+            screen.blit(lbl, lbl.get_rect(center=(bar_x + bar_w // 2,
+                                                   bar_y + black_h // 2)))

@@ -25,6 +25,8 @@ if __package__ == "src":
         load_piece_surfaces,
         draw_board,
         pixel_to_square,
+        ADV_BAR_W,
+        draw_advantage_bar,
     )
 else:
     from micromate.engine import AI, Game, Move
@@ -37,6 +39,8 @@ else:
         load_piece_surfaces,
         draw_board,
         pixel_to_square,
+        ADV_BAR_W,
+        draw_advantage_bar,
     )
 
 SAVE_PATH = Path.home() / ".micro-mate" / "save-state.json"
@@ -247,6 +251,7 @@ def _draw_background_for_modal(screen, game, theme_index):
             game.board,
             theme_index=theme_index,
             show_coords=_options["show_coords"],
+            right_panel=ADV_BAR_W,
         )
     # Draw blur overlay on top
     overlay = _blur_screen(screen)
@@ -432,7 +437,7 @@ def show_new_game_modal(screen, theme_index, allow_cancel=False, allow_continue=
             border_each = max(18, base_window // 28) if show_coords_preview else 0
             inner = max(80, base_window - 2 * border_each)
             cell = max(40, min(inner // selected_cols, inner // selected_rows))
-            target_w = cell * selected_cols + 2 * border_each
+            target_w = cell * selected_cols + 2 * border_each + ADV_BAR_W
             target_h = cell * selected_rows + 2 * border_each
             if screen.get_size() != (target_w, target_h):
                 pygame.display.set_mode((target_w, target_h), pygame.RESIZABLE)
@@ -453,6 +458,7 @@ def show_new_game_modal(screen, theme_index, allow_cancel=False, allow_continue=
                 piece_surfaces=piece_surfaces,
                 theme_index=theme_index,
                 show_coords=show_coords_preview,
+                right_panel=ADV_BAR_W,
             )
         except Exception as e:
             # Silently handle errors in preview to not crash the modal
@@ -627,7 +633,7 @@ def _fit_window_to_board(screen, base_size, board):
     border_each = max(18, base_size // 28) if _options["show_coords"] else 0
     inner = max(80, base_size - 2 * border_each)
     cell = max(40, min(inner // board.cols, inner // board.rows))
-    target_w = cell * board.cols + 2 * border_each
+    target_w = cell * board.cols + 2 * border_each + ADV_BAR_W
     target_h = cell * board.rows + 2 * border_each
     max_w, max_h = _max_window_size()
     if target_w > max_w or target_h > max_h:
@@ -948,7 +954,7 @@ def attempt_move(game, selected_sq, to_sq, theme_index):
 def handle_mousedown(game, screen, pos, selected_sq, cursor_sq, theme_index):
     """Handle mouse click. Returns (new_selected_sq, new_cursor_sq)."""
     sq = pixel_to_square(screen.get_size(), game.board, pos[0], pos[1],
-                        show_coords=_options["show_coords"])
+                         show_coords=_options["show_coords"], right_panel=ADV_BAR_W)
     if sq is None:
         return None, cursor_sq  # click outside board — deselect
 
@@ -1318,7 +1324,7 @@ def main(argv=None):
                             _last_click["time"] = now
                             _last_click["pos"] = ev.pos
                             sq = pixel_to_square(screen.get_size(), game.board, ev.pos[0], ev.pos[1],
-                                                 show_coords=_options["show_coords"])
+                                                 show_coords=_options["show_coords"], right_panel=ADV_BAR_W)
                             _dbg(f"event: click at {ev.pos} → sq={sq}")
                             selected_sq, cursor_sq = handle_mousedown(
                                 game, screen, ev.pos, selected_sq, cursor_sq, theme_index
@@ -1334,10 +1340,10 @@ def main(argv=None):
                     # Treat near-desktop sizes as "maximized" and leave them alone.
                     is_maximized = new_w >= int(desk_w * 0.95) or new_h >= int(desk_h * 0.95)
                     if not is_maximized:
-                        # Keep window square: use the larger dimension
-                        side = max(new_w, new_h)
+                        # Keep window square: use the larger dimension (excluding bar)
+                        side = max(new_w - ADV_BAR_W, new_h)
                         cell = max(40, min(side // game.board.cols, side // game.board.rows))
-                        new_w = cell * game.board.cols
+                        new_w = cell * game.board.cols + ADV_BAR_W
                         new_h = cell * game.board.rows
                     if (new_w, new_h) != size:
                         size = (new_w, new_h)
@@ -1355,6 +1361,12 @@ def main(argv=None):
                 current_turn=game.turn,
                 show_coords=_options["show_coords"],
                 king_in_check_sq=None if _options["dice_mode"] else game.get_king_check_square(),
+                right_panel=ADV_BAR_W,
+            )
+            draw_advantage_bar(
+                screen,
+                game.board.evaluate(pseudo_legal=_options["dice_mode"]),
+                game.board, theme_index, _options["show_coords"],
             )
             # Phase 7: Help modal via thorpy (called when show_help=True)
             if show_help:
