@@ -547,9 +547,13 @@ def apply_ai_move_if_needed(game, screen=None, theme_index=DEFAULT_THEME_INDEX):
     if _options["dice_mode"] and screen is not None:
         dest_piece = game.board.piece_at(ai_move.to_sq[0], ai_move.to_sq[1])
         if dest_piece is not None:
-            atk_piece = game.board.piece_at(ai_move.from_sq[0], ai_move.from_sq[1])
+            atk_piece  = game.board.piece_at(ai_move.from_sq[0], ai_move.from_sq[1])
+            _dice_rows = game.board.rows
             proceed = _attempt_capture_with_dice(game, ai_move, atk_piece, dest_piece, screen, theme_index)
             if not proceed:
+                _log_move(ai_move, atk_piece, dest_piece, _dice_rows,
+                          len(game.move_history) - 1,
+                          ai_time=ai_time if _options["debug"] else None)
                 if screen is not None:
                     _check_game_over(game, screen, theme_index)
                 return  # AI's capture was blocked or AI lost piece — turn consumed
@@ -774,6 +778,7 @@ def attempt_move(game, selected_sq, to_sq, theme_index):
         screen = pygame.display.get_surface()
         proceed = _attempt_capture_with_dice(game, move, piece, dest_piece, screen, theme_index)
         if not proceed:
+            _log_move(move, _log_piece_pre, _log_captured_pre, _log_rows, len(game.move_history) - 1)
             _check_game_over(game, screen, theme_index)
             apply_ai_move_if_needed(game, screen=screen, theme_index=theme_index)
             return None, to_sq
