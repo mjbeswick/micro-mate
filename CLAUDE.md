@@ -40,6 +40,20 @@ There is no linter, formatter, or test runner configured. Don't add one without 
 - Save file is `~/.micro-mate/save-state.json`. A save with zero moves is treated as "no game" and the new-game modal opens on launch.
 - `PLAN.md` tracks engine work and is intended to be deleted once complete (per repo convention, plan files are scratch).
 
+## Web port (`web/`)
+
+A TypeScript / Konva.js / PWA port lives in `web/`. See `web/README.md` for
+details. The engine is a direct port of `src/micromate/engine.py` using
+`bigint` bitboards (16×16 boards exceed the 53-bit safe integer range).
+
+- Engine semantics are duplicated across Python and TS. **Both must stay in
+  sync.** When changing either engine, re-run `uv run python tools/dump_engine_fixtures.py`
+  and run `cd web && npm test` — the TS suite asserts parity against the
+  Python-dumped fixtures (starting bitboards, perft, AI traces, legal-move
+  iteration order).
+- AI tie-breaking is sensitive to `legal_moves` iteration order. Don't reorder
+  the loops in either engine without re-dumping fixtures.
+
 ## Repo-wide rules (from `~/Projects/CLAUDE.md`)
 
 - Commit after each logical batch — don't batch a session of changes into one commit.

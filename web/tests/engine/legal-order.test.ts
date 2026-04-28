@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Board } from "../../src/engine";
 import fixtures from "../fixtures/engine.json";
 
-const ORDERS = fixtures.legal_moves_startpos_white as Record<
+const ORDERS = fixtures.legal_moves_startpos_white as unknown as Record<
   string,
   { from: [number, number]; to: [number, number]; promotion: string | null }[]
 >;

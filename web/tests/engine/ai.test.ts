@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Game } from "../../src/engine";
 import fixtures from "../fixtures/engine.json";
 
-const TRACES = fixtures.ai_traces_depth2 as Record<
+const TRACES = fixtures.ai_traces_depth2 as unknown as Record<
   string,
   { from: [number, number]; to: [number, number]; promotion: string | null; turn_before: "w" | "b" }[]
 >;
