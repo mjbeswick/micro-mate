@@ -61,6 +61,7 @@ _options = {
 _toast = {"text": None, "until": 0}
 _toast_cache = {"text": None, "theme_index": None, "surface": None, "label_rect": None, "bg_rect": None}
 _piece_surfaces = None  # set once in main(); used for mid-pause board renders
+_game_over = False      # set True when the game is decided; cleared on new game
 
 def _dbg(msg):
     """Print a timestamped debug line when --debug is active."""
@@ -172,6 +173,8 @@ def print_board_notation(game):
 
 def create_game_with_size(rows, cols):
     """Create a new game with specified board size."""
+    global _game_over
+    _game_over = False
     mode  = _options.get("game_mode", "Human vs AI")
     depth = _options["ai_depth"]
     dice  = "dice" if _options.get("dice_mode") else ""
@@ -486,22 +489,30 @@ def show_checkmate_modal(screen, game, theme_index, loser_color):
 
 HUMAN_COLOR = 'w'
 
-def _check_game_over(game, screen, theme_index):
-    """Show end-of-game modal when the game is decided."""
+def _check_game_over(game, screen, theme_index) -> bool:
+    """Show end-of-game modal when the game is decided. Returns True if over."""
+    global _game_over
     if _options["dice_mode"]:
         # King-capture mode: game ends when a king is physically taken.
         if not game.board.bb['w']['K']:
+            _game_over = True
             _pause_for_final_position(screen, game, theme_index)
             show_checkmate_modal(screen, game, theme_index, loser_color='w')
+            return True
         elif not game.board.bb['b']['K']:
+            _game_over = True
             _pause_for_final_position(screen, game, theme_index)
             show_checkmate_modal(screen, game, theme_index, loser_color='b')
+            return True
     else:
         if game.get_legal_moves():
-            return
+            return False
         if game.board._is_in_check(game.turn):
+            _game_over = True
             _pause_for_final_position(screen, game, theme_index)
             show_checkmate_modal(screen, game, theme_index, loser_color=game.turn)
+            return True
+    return False
 
 def _pause_for_final_position(screen, game, theme_index):
     """Render the board once and wait 500ms so the player sees the final position."""
@@ -578,6 +589,8 @@ def apply_ai_move_if_needed(game, screen=None, theme_index=DEFAULT_THEME_INDEX):
     When `screen` is provided the search runs in a worker thread and a
     'Thinking...' modal with a Force move button is shown. Without a
     screen the call is synchronous (used at startup before the loop)."""
+    if _game_over:
+        return
     if not _options["ai_enabled"]:
         return
     if game.turn == HUMAN_COLOR:
@@ -969,6 +982,8 @@ def handle_keydown(game, key, awaiting_restart, theme_index, selected_sq, cursor
 
     # Space/Enter: select or move
     if key in (pygame.K_SPACE, pygame.K_RETURN):
+        if _game_over:
+            return False, False, theme_index, selected_sq, cursor_sq, False
         if selected_sq is None:
             if cur in _movable_squares(game):
                 return False, False, theme_index, cur, cur, False
@@ -1228,7 +1243,7 @@ def main(argv=None):
                     if should_quit:
                         running = False
                 elif ev.type == pygame.MOUSEBUTTONDOWN:
-                    if ev.button == 1 and not awaiting_restart and not show_help:
+                    if ev.button == 1 and not awaiting_restart and not show_help and not _game_over:
                         now = pygame.time.get_ticks()
                         if now - _last_click["time"] <= DOUBLE_CLICK_MS and _last_click["pos"] == ev.pos:
                             _dbg(f"event: double-click at {ev.pos} → New Game")
