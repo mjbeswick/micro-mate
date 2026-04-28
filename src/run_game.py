@@ -741,8 +741,10 @@ def show_combat_roll_modal(screen, game, atk_piece, def_piece, atk_roll, def_rol
     vs_text = Text("vs")
     def_die = SingleStateImage(_render_die_surface(1))
     dice_row = Group([atk_die, vs_text, def_die], "h")
-    result_text = Text(" ")
-    ok_btn = Button("Rolling...")
+    # Pre-size with the final/widest text so the box dimensions are fixed from
+    # the start; then swap to the rolling-phase placeholders before launch.
+    result_text = Text(result_line)
+    ok_btn = Button("OK (3)")
     ok_btn.at_unclick = lambda: tp.loops.quit_current_loop()
 
     w, h = screen.get_size()
@@ -753,6 +755,11 @@ def show_combat_roll_modal(screen, game, atk_piece, def_piece, atk_roll, def_rol
     box.set_size((modal_w, modal_h))
     box.center_on(screen)
     _make_modal_transparent(box)
+
+    # Swap to rolling-phase placeholders; re-clamp size so the box stays put.
+    result_text.set_text(" ")
+    ok_btn.set_text("Rolling...")
+    box.set_size((modal_w, modal_h))
 
     _last_size = [screen.get_size()]
     start_time = time.monotonic()
@@ -783,6 +790,7 @@ def show_combat_roll_modal(screen, game, atk_piece, def_piece, atk_roll, def_rol
                 atk_die.set_image(_render_die_surface(atk_roll))
                 def_die.set_image(_render_die_surface(def_roll))
                 result_text.set_text(result_line)
+                box.set_size((modal_w, modal_h))
                 settled[0] = True
             remaining = AUTO_HIDE_S - (elapsed - ROLL_S)
             if remaining <= 0:
@@ -791,6 +799,7 @@ def show_combat_roll_modal(screen, game, atk_piece, def_piece, atk_roll, def_rol
                 countdown = int(remaining) + 1
                 if countdown != _last_countdown[0]:
                     ok_btn.set_text(f"OK ({countdown})")
+                    box.set_size((modal_w, modal_h))
                     _last_countdown[0] = countdown
 
     box.launch_alone(func_before=draw_bg, click_outside_cancel=True)
