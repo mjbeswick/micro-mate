@@ -126,6 +126,34 @@ export class Game {
     return true;
   }
 
+  /** Combat result (dice mode): attacker piece destroyed on its own square,
+   *  defender stays. Advances the turn and records a snapshot. */
+  makeAttackerLoss(move: Move): void {
+    const [rF, cF] = move.from;
+    const piece = this.board.pieceAt(rF, cF);
+    if (piece) {
+      this.board.bb[piece.color][piece.kind] &= ~this.board.bit(rF, cF);
+    }
+    if (this.historyIndex < this.history.length - 1) {
+      this.moveHistory = this.moveHistory.slice(0, this.historyIndex);
+    }
+    this.moveHistory.push(move);
+    this.turn = this.turn === "w" ? "b" : "w";
+    this.kingCheckValid = false;
+    this.recordPosition();
+  }
+
+  /** Combat result (dice mode): attack blocked, no pieces change. Advances the turn. */
+  skipTurn(move: Move): void {
+    if (this.historyIndex < this.history.length - 1) {
+      this.moveHistory = this.moveHistory.slice(0, this.historyIndex);
+    }
+    this.moveHistory.push(move);
+    this.turn = this.turn === "w" ? "b" : "w";
+    this.kingCheckValid = false;
+    this.recordPosition();
+  }
+
   // --- Serialisation ---
 
   toState(): GameStateJSON {
