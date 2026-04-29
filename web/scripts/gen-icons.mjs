@@ -11,8 +11,8 @@ const OUT = resolve(__dirname, "..", "public", "icons");
 mkdirSync(OUT, { recursive: true });
 
 if (!existsSync(SRC)) {
-  console.error(`Source SVG missing: ${SRC}`);
-  process.exit(1);
+  console.warn(`Source SVG missing: ${SRC} — assuming public/icons/ is pre-populated.`);
+  process.exit(0);
 }
 
 const svg = readFileSync(SRC);

@@ -10,8 +10,8 @@ const SRC = resolve(__dirname, "..", "..", "src", "micromate", "assets", "svg");
 const DEST = resolve(__dirname, "..", "public", "pieces");
 
 if (!existsSync(SRC)) {
-  console.error(`Source SVG dir not found: ${SRC}`);
-  process.exit(1);
+  console.warn(`Source SVG dir not found: ${SRC} — assuming public/pieces/ is pre-populated.`);
+  process.exit(0);
 }
 mkdirSync(DEST, { recursive: true });
 
