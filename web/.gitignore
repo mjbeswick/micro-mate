@@ -1,9 +1,0 @@
-node_modules
-dist
-dev-dist
-*.log
-.vite
-tsconfig.tsbuildinfo
-# Generated assets — re-created via scripts/sync-assets.mjs and scripts/gen-icons.mjs
-# (committed for offline-first / no-build clones)
-.vercel

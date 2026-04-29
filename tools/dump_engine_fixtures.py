@@ -3,9 +3,12 @@
 Captures starting bitboards per board size, perft counts, and AI move traces.
 The TypeScript port consumes this file as ground truth.
 
-Run: uv run python tools/dump_engine_fixtures.py > web/tests/fixtures/engine.json
+Run: uv run python tools/dump_engine_fixtures.py
+Writes to ../micro-mate-web/tests/fixtures/engine.json (override with
+MICROMATE_WEB_ROOT).
 """
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -99,7 +102,13 @@ def main():
         "ai_traces_depth2": dump_ai_traces(),
         "legal_moves_startpos_white": dump_legal_move_orders(),
     }
-    out_path = Path(__file__).resolve().parent.parent / "web" / "tests" / "fixtures" / "engine.json"
+    web_root = Path(
+        os.environ.get(
+            "MICROMATE_WEB_ROOT",
+            Path(__file__).resolve().parent.parent.parent / "micro-mate-web",
+        )
+    )
+    out_path = web_root / "tests" / "fixtures" / "engine.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(fixtures, indent=2))
     print(f"Wrote {out_path}")
