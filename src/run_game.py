@@ -162,17 +162,8 @@ def print_board_notation(game):
     """Print board notation before exit."""
     try:
         from micromate.pgn import export_pgn
-        pgn = export_pgn(game)
-        if pgn:
-            print("\n--- Final Position (PGN) ---")
-            print(pgn)
-        else:
-            print("\n--- Final Position (non-8x8 board, PGN export unavailable) ---")
-            print(f"Board: {game.board.rows}x{game.board.cols}")
-            print(f"Moves: {len(game.move_history)}")
-            if game.move_history:
-                last_move = game.move_history[-1]
-                print(f"Last move: {last_move}")
+        print("\n--- Final Position (PGN) ---")
+        print(export_pgn(game))
     except Exception:
         pass
 
@@ -1037,11 +1028,7 @@ def handle_keydown(game, key, awaiting_restart, theme_index, selected_sq, cursor
         return False, False, theme_index, selected_sq, cursor_sq, False
 
     if key == pygame.K_p:
-        pgn = export_pgn(game)
-        if pgn is None:
-            print("PGN export only available on 8x8 boards.", file=sys.stderr)
-        else:
-            print(pgn)
+        print(export_pgn(game))
         return False, False, theme_index, selected_sq, cursor_sq, False
 
     # Keyboard cursor movement (arrow keys + WASD)
@@ -1446,11 +1433,7 @@ def main(argv=None):
             exit_code = 1
         save_options()  # Always save options on exit
         if args.print_pgn:
-            pgn = export_pgn(game)
-            if pgn is None:
-                print("PGN export only available on 8x8 boards.", file=sys.stderr)
-            else:
-                print(pgn)
+            print(export_pgn(game))
         pygame.quit()
 
     return exit_code
