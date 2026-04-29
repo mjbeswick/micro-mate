@@ -57,6 +57,7 @@ export interface NewGameResult {
   aiEnabled: boolean;
   aiDepth: number;
   themeIndex: number;
+  diceMode: boolean;
 }
 
 const SIZE_PRESETS: [number, number, string][] = [
@@ -77,6 +78,7 @@ export function openNewGameModal(initial: NewGameResult): Promise<NewGameResult 
       <fieldset><legend>Board size</legend><div class="size-grid"></div></fieldset>
       <label>AI <input type="checkbox" ${chosen.aiEnabled ? "checked" : ""} data-ai></label>
       <label>AI level <input type="range" min="1" max="5" value="${chosen.aiDepth}" data-depth /> <span data-depth-val>${chosen.aiDepth}</span></label>
+      <label>Dice combat <input type="checkbox" ${chosen.diceMode ? "checked" : ""} data-dice></label>
       <label>Theme
         <select data-theme>
           ${["Classic", "Forest", "Midnight", "Grey", "Rosewood"]
@@ -106,6 +108,9 @@ export function openNewGameModal(initial: NewGameResult): Promise<NewGameResult 
     }
     wrap.querySelector("[data-ai]")!.addEventListener("change", (e) => {
       chosen.aiEnabled = (e.target as HTMLInputElement).checked;
+    });
+    wrap.querySelector("[data-dice]")!.addEventListener("change", (e) => {
+      chosen.diceMode = (e.target as HTMLInputElement).checked;
     });
     const depthInput = wrap.querySelector("[data-depth]") as HTMLInputElement;
     const depthVal = wrap.querySelector("[data-depth-val]") as HTMLElement;
@@ -177,7 +182,6 @@ export function openHelpModal(installPrompt: { available: boolean; trigger: () =
         <tr><td>T / C</td><td>Theme / coords</td></tr>
         <tr><td>+ / −</td><td>AI level</td></tr>
         <tr><td>N / R</td><td>New game</td></tr>
-        <tr><td>B</td><td>Toggle dice combat mode</td></tr>
         <tr><td>P</td><td>PGN import/export</td></tr>
         <tr><td>?</td><td>This help</td></tr>
       </table>

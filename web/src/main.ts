@@ -183,11 +183,6 @@ async function main() {
     store.set({ options: { ...store.get().options, showCoords: !store.get().options.showCoords } });
   const onToggleAI = () =>
     store.set({ options: { ...store.get().options, aiEnabled: !store.get().options.aiEnabled } });
-  const onToggleDice = () => {
-    const next = !store.get().options.diceMode;
-    store.set({ options: { ...store.get().options, diceMode: next } });
-    showToast(store, next ? "Dice combat: on" : "Dice combat: off");
-  };
 
   const onUndo = () => {
     if (store.get().game.stepBackward()) {
@@ -212,6 +207,7 @@ async function main() {
       aiEnabled: s.options.aiEnabled,
       aiDepth: s.options.aiDepth,
       themeIndex: s.options.themeIndex,
+      diceMode: s.options.diceMode,
     });
     if (!result) return;
     clearState();
@@ -226,6 +222,7 @@ async function main() {
         themeIndex: result.themeIndex,
         aiEnabled: result.aiEnabled,
         aiDepth: result.aiDepth,
+        diceMode: result.diceMode,
       },
     });
     renderAll();
@@ -261,7 +258,7 @@ async function main() {
 
   mountTopbar(topbar, store, {
     onNewGame, onHelp, onPGN, onUndo, onRedo,
-    onToggleAI, onToggleDice, onCycleTheme, onToggleCoords, onChangeDepth,
+    onToggleAI, onCycleTheme, onToggleCoords, onChangeDepth,
   });
   mountToast(toastRoot, store);
 
@@ -277,7 +274,6 @@ async function main() {
       case "]": onRedo(); break;
       case "t": case "T": onCycleTheme(); break;
       case "c": case "C": onToggleCoords(); break;
-      case "b": case "B": onToggleDice(); break;
       case "+": case "=": onChangeDepth(+1); break;
       case "-": case "_": onChangeDepth(-1); break;
       case "n": case "N": case "r": case "R": void onNewGame(); break;

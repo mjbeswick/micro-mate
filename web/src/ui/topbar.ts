@@ -8,7 +8,6 @@ export interface TopbarHandlers {
   onUndo: () => void;
   onRedo: () => void;
   onToggleAI: () => void;
-  onToggleDice: () => void;
   onCycleTheme: () => void;
   onToggleCoords: () => void;
   onChangeDepth: (delta: number) => void;
@@ -28,7 +27,6 @@ export function mountTopbar(host: HTMLElement, store: Store, h: TopbarHandlers):
       </label>
       <label><input type="checkbox" data-act="coords" /> Coords</label>
       <label><input type="checkbox" data-act="ai" /> AI</label>
-      <label><input type="checkbox" data-act="dice" /> Dice</label>
       <label>AI level
         <button data-act="depth-down">−</button>
         <span data-act="depth-val">3</span>
@@ -45,7 +43,6 @@ export function mountTopbar(host: HTMLElement, store: Store, h: TopbarHandlers):
   const themeSel = $("[data-act=theme]") as HTMLSelectElement;
   const coordsBox = $("[data-act=coords]") as HTMLInputElement;
   const aiBox = $("[data-act=ai]") as HTMLInputElement;
-  const diceBox = $("[data-act=dice]") as HTMLInputElement;
   const depthVal = $("[data-act=depth-val]");
   const thinking = $("[data-act=thinking]");
 
@@ -54,7 +51,6 @@ export function mountTopbar(host: HTMLElement, store: Store, h: TopbarHandlers):
     themeSel.value = String(s.options.themeIndex);
     coordsBox.checked = s.options.showCoords;
     aiBox.checked = s.options.aiEnabled;
-    diceBox.checked = s.options.diceMode;
     depthVal.textContent = String(s.options.aiDepth);
     thinking.hidden = !s.thinking;
   };
@@ -76,7 +72,6 @@ export function mountTopbar(host: HTMLElement, store: Store, h: TopbarHandlers):
     store.set({ options: { ...store.get().options, showCoords: coordsBox.checked } }),
   );
   aiBox.addEventListener("change", h.onToggleAI);
-  diceBox.addEventListener("change", h.onToggleDice);
   $("[data-act=depth-down]").addEventListener("click", () => h.onChangeDepth(-1));
   $("[data-act=depth-up]").addEventListener("click", () => h.onChangeDepth(1));
 
