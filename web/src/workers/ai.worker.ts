@@ -14,6 +14,7 @@ interface RequestMsg {
   bb: BBSerialized;
   turn: Color;
   depth: number;
+  pseudoLegal?: boolean;
 }
 
 interface ResponseMsg {
@@ -34,11 +35,11 @@ function deserializeBB(s: BBSerialized): Bitboards {
 }
 
 self.addEventListener("message", (e: MessageEvent<RequestMsg>) => {
-  const { id, rows, cols, bb, turn, depth } = e.data;
+  const { id, rows, cols, bb, turn, depth, pseudoLegal } = e.data;
   const board = new Board(rows, cols);
   board.bb = deserializeBB(bb);
   const ai = new AI(depth);
-  const mv = ai.bestMove(board, turn);
+  const mv = ai.bestMove(board, turn, pseudoLegal === true);
   const out: ResponseMsg = {
     id,
     move: mv

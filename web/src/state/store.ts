@@ -9,6 +9,7 @@ export interface Options {
   showCoords: boolean;
   aiEnabled: boolean;
   aiDepth: number; // 1..5
+  diceMode: boolean;
 }
 
 export interface Toast {
@@ -57,6 +58,7 @@ export const DEFAULT_OPTIONS: Options = {
   showCoords: false,
   aiEnabled: true,
   aiDepth: 3,
+  diceMode: false,
 };
 
 export function initialState(rows = 8, cols = 8, opts: Options = DEFAULT_OPTIONS): State {

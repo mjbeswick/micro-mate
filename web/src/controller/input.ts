@@ -1,4 +1,15 @@
-/** Input controller — click & drag share one state machine. */
+/** Input controller — click & drag share one state machine.
+ *
+ *  Click flow (always evaluated on pointer-up if no drag occurred):
+ *    nothing selected → clicking own piece selects it.
+ *    something selected → clicking a legal target square commits the move.
+ *                         clicking the same square deselects.
+ *                         clicking another own piece re-selects.
+ *                         anything else deselects.
+ *
+ *  Drag flow (only after pointer moves > DRAG_THRESHOLD_PX from down):
+ *    own piece becomes draggable; release on legal target commits, else snap back.
+ */
 import type Konva from "konva";
 import type { Move } from "../engine";
 import type { Store } from "../state/store";
@@ -18,30 +29,35 @@ export interface InputDeps {
 
 export function attachInput({ store, renderer, tryMove, legalFrom }: InputDeps): () => void {
   const stage = renderer.getStage();
-  const pieceLayer = renderer.getPieceLayer();
 
   let dragNode: Konva.Image | null = null;
   let dragStartXY: { x: number; y: number } | null = null;
   let dragOrigin: [number, number] | null = null;
   let dragActive = false;
 
-  const onPointerDown = (e: Konva.KonvaEventObject<PointerEvent | MouseEvent | TouchEvent>) => {
-    const target = e.target;
+  const onPointerDown = () => {
     const pos = stage.getPointerPosition();
     if (!pos) return;
     const g = renderer.getGeometry();
     const sq = pixelToSquare(g, pos.x, pos.y);
-    if (!sq) return;
+    if (!sq) {
+      dragNode = null;
+      dragOrigin = null;
+      return;
+    }
+    dragStartXY = { ...pos };
     const state = store.get();
     const piece = pieceColorAt(state, sq);
     if (piece && piece === state.game.turn) {
-      dragNode = target instanceof window.Konva!.Image ? (target as Konva.Image) : renderer.pieceAt(sq[0], sq[1]) ?? null;
-      dragStartXY = { ...pos };
+      // Could become a drag, or could remain a click if the pointer doesn't move.
+      dragNode = renderer.pieceAt(sq[0], sq[1]) ?? null;
       dragOrigin = sq;
       dragActive = false;
     } else {
+      // Not own piece — clicks are still routed in onPointerUp via dragOrigin=sq.
       dragNode = null;
-      dragOrigin = null;
+      dragOrigin = sq;
+      dragActive = false;
     }
   };
 
@@ -56,36 +72,31 @@ export function attachInput({ store, renderer, tryMove, legalFrom }: InputDeps):
       dragActive = true;
       dragNode.draggable(true);
       dragNode.moveToTop();
-      // Mark selected on first drag movement
       store.set({ selected: dragOrigin });
     }
-    // Konva will move the node automatically since draggable=true now
   };
 
   const onPointerUp = async () => {
-    if (!dragNode || !dragOrigin) {
-      dragNode = null;
-      dragOrigin = null;
-      dragActive = false;
+    const origin = dragOrigin;
+    const node = dragNode;
+    const wasDrag = dragActive;
+    cleanup();
+    if (!origin) return;
+
+    if (!wasDrag) {
+      await handleClick(origin);
       return;
     }
-    if (!dragActive) {
-      // It was a click, not a drag — handle click selection.
-      handleClick(dragOrigin);
-      cleanup();
-      return;
-    }
+
+    // Drag release: locate the destination square at pointer-up location.
     const pos = stage.getPointerPosition();
     const g = renderer.getGeometry();
     const sq = pos ? pixelToSquare(g, pos.x, pos.y) : null;
-    const node = dragNode;
-    const origin = dragOrigin;
-    cleanup();
     if (sq && (sq[0] !== origin[0] || sq[1] !== origin[1])) {
-      const move = pickPromotion(legalFrom(origin), origin, sq);
+      const move = pickMove(legalFrom(origin), origin, sq);
       const applied = move ? await tryMove(move) : false;
-      if (!applied) snapBack(node, g, origin);
-    } else {
+      if (!applied && node) snapBack(node, g, origin);
+    } else if (node) {
       snapBack(node, g, origin);
     }
   };
@@ -106,13 +117,12 @@ export function attachInput({ store, renderer, tryMove, legalFrom }: InputDeps):
         return;
       }
       const moves = legalFrom(state.selected);
-      const m = pickPromotion(moves, state.selected, sq);
+      const m = pickMove(moves, state.selected, sq);
       if (m) {
-        const ok = await tryMove(m);
-        if (ok) store.set({ selected: null });
+        await tryMove(m);
         return;
       }
-      // Re-select if clicking own piece
+      // No legal move to this square. Re-select if clicking own piece, else deselect.
       const owner = pieceColorAt(state, sq);
       if (owner && owner === state.game.turn) {
         store.set({ selected: sq });
@@ -131,25 +141,15 @@ export function attachInput({ store, renderer, tryMove, legalFrom }: InputDeps):
     node.to({ x: x + padding, y: y + padding, duration: 0.12 });
   }
 
-  pieceLayer.on("pointerdown mousedown touchstart", onPointerDown as any);
+  // Listen on the whole stage so empty squares and enemy pieces both fire.
+  stage.on("pointerdown mousedown touchstart", onPointerDown as any);
   stage.on("pointermove mousemove touchmove", onPointerMove as any);
   stage.on("pointerup mouseup touchend", onPointerUp as any);
 
-  // Bare click on empty square (no piece under pointer) deselects.
-  stage.on("click tap", (e) => {
-    if (e.target === stage) {
-      const pos = stage.getPointerPosition();
-      if (!pos) return;
-      const sq = pixelToSquare(renderer.getGeometry(), pos.x, pos.y);
-      if (sq) handleClick(sq);
-    }
-  });
-
   return () => {
-    pieceLayer.off("pointerdown mousedown touchstart");
+    stage.off("pointerdown mousedown touchstart");
     stage.off("pointermove mousemove touchmove");
     stage.off("pointerup mouseup touchend");
-    stage.off("click tap");
   };
 }
 
@@ -158,11 +158,14 @@ function pieceColorAt(state: ReturnType<Store["get"]>, sq: [number, number]): "w
   return p ? p.color : null;
 }
 
-function pickPromotion(moves: Move[], from: [number, number], to: [number, number]): Move | null {
-  // Engine auto-promotes to Q; just match from/to.
+function pickMove(moves: Move[], from: [number, number], to: [number, number]): Move | null {
   return (
     moves.find(
-      (m) => m.from[0] === from[0] && m.from[1] === from[1] && m.to[0] === to[0] && m.to[1] === to[1],
+      (m) =>
+        m.from[0] === from[0] &&
+        m.from[1] === from[1] &&
+        m.to[0] === to[0] &&
+        m.to[1] === to[1],
     ) ?? null
   );
 }

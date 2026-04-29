@@ -12,7 +12,7 @@ function getWorker(): Worker {
   return worker;
 }
 
-export function computeAIMove(game: Game): Promise<Move | null> {
+export function computeAIMove(game: Game, pseudoLegal = false): Promise<Move | null> {
   const id = nextId++;
   const w = getWorker();
   const bb = {
@@ -26,6 +26,7 @@ export function computeAIMove(game: Game): Promise<Move | null> {
     bb,
     turn: game.turn,
     depth: game.aiDepth,
+    pseudoLegal,
   };
   return new Promise((resolve) => {
     const onMsg = (e: MessageEvent<ResponseMsg>) => {

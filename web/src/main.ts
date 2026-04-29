@@ -17,8 +17,9 @@ import {
   openNewGameModal,
   openPGNModal,
 } from "./ui/modals";
+import { runDiceCombat } from "./ui/dice";
 import { debouncedSave, loadState, clearState } from "./persistence/save";
-import { exportPGN, importPGN, isPGNCompatible } from "./pgn";
+import { exportPGN, importPGN } from "./pgn";
 import { registerPWA, setThemeColor, setupInstallPrompt } from "./pwa/register";
 
 declare global {
@@ -32,7 +33,7 @@ function computeLegalTargets(s: State): [number, number][] {
   if (!s.selected) return [];
   const [r, c] = s.selected;
   return s.game
-    .getLegalMoves()
+    .getLegalMoves(s.options.diceMode)
     .filter((m) => m.from[0] === r && m.from[1] === c)
     .map((m) => [m.to[0], m.to[1]] as [number, number]);
 }
@@ -43,7 +44,7 @@ async function main() {
   const toastRoot = document.getElementById("toast-root") as HTMLElement;
 
   const persisted = loadState();
-  let opts = persisted?.options ?? DEFAULT_OPTIONS;
+  let opts: typeof DEFAULT_OPTIONS = { ...DEFAULT_OPTIONS, ...(persisted?.options ?? {}) };
   let initialGame: Game;
   if (persisted) {
     try {
@@ -56,7 +57,10 @@ async function main() {
     initialGame = new Game(8, 8, opts.aiDepth);
   }
 
-  const initial: State = { ...initialState(initialGame.board.rows, initialGame.board.cols, opts), game: initialGame };
+  const initial: State = {
+    ...initialState(initialGame.board.rows, initialGame.board.cols, opts),
+    game: initialGame,
+  };
   const store = new Store(initial);
   const pieces = await loadPieceImages();
   const renderer = new BoardRenderer(container);
@@ -64,12 +68,18 @@ async function main() {
   const installPrompt = setupInstallPrompt();
   void registerPWA(store);
 
-  const driver = createAIDriver(store, computeAIMove);
+  const driver = createAIDriver(store, computeAIMove, async (game, move) => {
+    const atk = game.board.pieceAt(move.from[0], move.from[1]);
+    const def = game.board.pieceAt(move.to[0], move.to[1]);
+    if (!atk || !def) return true;
+    const outcome = await runDiceCombat(game, move, atk, def);
+    return outcome === "attacker_wins";
+  });
 
   function renderAll() {
     const s = store.get();
     const targets = computeLegalTargets(s);
-    const kingCheck = s.game.getKingCheckSquare();
+    const kingCheck = s.options.diceMode ? null : s.game.getKingCheckSquare();
     renderer.render({
       rows: s.game.board.rows,
       cols: s.game.board.cols,
@@ -92,18 +102,64 @@ async function main() {
 
   const tryMove = async (m: Move): Promise<boolean> => {
     const s = store.get();
-    if (!s.game.makeMove(m)) return false;
+    const dice = s.options.diceMode;
+    const atk = s.game.board.pieceAt(m.from[0], m.from[1]);
+    const def = s.game.board.pieceAt(m.to[0], m.to[1]);
+
+    if (dice && def && atk) {
+      // Validate against pseudo-legal moves
+      const legal = s.game
+        .getLegalMoves(true)
+        .some(
+          (mm) =>
+            mm.from[0] === m.from[0] &&
+            mm.from[1] === m.from[1] &&
+            mm.to[0] === m.to[0] &&
+            mm.to[1] === m.to[1],
+        );
+      if (!legal) return false;
+      const outcome = await runDiceCombat(s.game, m, atk, def);
+      if (outcome === "attacker_wins") {
+        s.game.makeMove(m, true);
+      }
+      // For all outcomes, refresh state and let AI take its turn.
+      store.set({ lastMove: m, selected: null });
+      renderAll();
+      // Dice mode king-capture wins → terminal check
+      if (s.game.board.bb.w.K === 0n || s.game.board.bb.b.K === 0n) {
+        await announceKingCaptured();
+        return true;
+      }
+      await driver.applyAIIfNeeded();
+      renderAll();
+      if (s.game.board.bb.w.K === 0n || s.game.board.bb.b.K === 0n) {
+        await announceKingCaptured();
+      }
+      return true;
+    }
+
+    if (!s.game.makeMove(m, dice)) return false;
     store.set({ lastMove: m, selected: null });
     renderAll();
+    if (dice && (s.game.board.bb.w.K === 0n || s.game.board.bb.b.K === 0n)) {
+      await announceKingCaptured();
+      return true;
+    }
     await driver.applyAIIfNeeded();
     renderAll();
-    await maybeAnnounceEndgame();
+    if (dice && (s.game.board.bb.w.K === 0n || s.game.board.bb.b.K === 0n)) {
+      await announceKingCaptured();
+    } else if (!dice) {
+      await maybeAnnounceEndgame();
+    }
     return true;
   };
 
   const legalFrom = (from: [number, number]): Move[] => {
     const s = store.get();
-    return s.game.getLegalMoves().filter((m) => m.from[0] === from[0] && m.from[1] === from[1]);
+    return s.game
+      .getLegalMoves(s.options.diceMode)
+      .filter((m) => m.from[0] === from[0] && m.from[1] === from[1]);
   };
 
   attachInput({ store, renderer, tryMove, legalFrom });
@@ -116,7 +172,7 @@ async function main() {
     if (next === s.options.aiDepth) return;
     s.game.aiDepth = next;
     store.set({ options: { ...s.options, aiDepth: next } });
-    showToast(store, `AI depth: ${next}`);
+    showToast(store, `AI level: ${next}`);
   };
 
   const onCycleTheme = () => {
@@ -127,6 +183,11 @@ async function main() {
     store.set({ options: { ...store.get().options, showCoords: !store.get().options.showCoords } });
   const onToggleAI = () =>
     store.set({ options: { ...store.get().options, aiEnabled: !store.get().options.aiEnabled } });
+  const onToggleDice = () => {
+    const next = !store.get().options.diceMode;
+    store.set({ options: { ...store.get().options, diceMode: next } });
+    showToast(store, next ? "Dice combat: on" : "Dice combat: off");
+  };
 
   const onUndo = () => {
     if (store.get().game.stepBackward()) {
@@ -161,8 +222,8 @@ async function main() {
       cursor: null,
       lastMove: null,
       options: {
+        ...s.options,
         themeIndex: result.themeIndex,
-        showCoords: s.options.showCoords,
         aiEnabled: result.aiEnabled,
         aiDepth: result.aiDepth,
       },
@@ -176,22 +237,20 @@ async function main() {
 
   const onPGN = async () => {
     const s = store.get();
-    if (!isPGNCompatible(s.game)) {
-      showToast(store, "PGN is 8×8 only");
-      return;
-    }
-    const current = exportPGN(s.game) ?? "";
+    const current = exportPGN(s.game);
     const result = await openPGNModal(current);
     if (result.action === "import" && result.text) {
-      const { moves, truncatedAt } = importPGN(result.text);
-      const game = new Game(8, 8, s.options.aiDepth);
-      for (const m of moves) game.makeMove(m);
+      const { game, truncatedAt } = importPGN(result.text, s.options.aiDepth);
       store.set({ game, selected: null, lastMove: game.currentMove });
       renderAll();
+      const movesPlayed = game.moveHistory.length;
       if (truncatedAt !== null) {
-        showToast(store, `Imported ${moves.length} moves (truncated at ${truncatedAt + 1}: castling/en passant)`);
+        showToast(
+          store,
+          `Imported ${movesPlayed} moves (stopped at move ${truncatedAt + 1})`,
+        );
       } else {
-        showToast(store, `Imported ${moves.length} moves`);
+        showToast(store, `Imported ${movesPlayed} moves`);
       }
       await driver.applyAIIfNeeded();
       renderAll();
@@ -202,7 +261,7 @@ async function main() {
 
   mountTopbar(topbar, store, {
     onNewGame, onHelp, onPGN, onUndo, onRedo,
-    onToggleAI, onCycleTheme, onToggleCoords, onChangeDepth,
+    onToggleAI, onToggleDice, onCycleTheme, onToggleCoords, onChangeDepth,
   });
   mountToast(toastRoot, store);
 
@@ -218,6 +277,7 @@ async function main() {
       case "]": onRedo(); break;
       case "t": case "T": onCycleTheme(); break;
       case "c": case "C": onToggleCoords(); break;
+      case "b": case "B": onToggleDice(); break;
       case "+": case "=": onChangeDepth(+1); break;
       case "-": case "_": onChangeDepth(-1); break;
       case "n": case "N": case "r": case "R": void onNewGame(); break;
@@ -256,13 +316,17 @@ async function main() {
     }
   });
 
-  // ---- Resize ----
+  // ---- Resize: scale board to its container ----
 
-  const onResize = () => {
+  const ro = new ResizeObserver(() => {
     renderer.resize(container.clientWidth, container.clientHeight);
     renderAll();
-  };
-  window.addEventListener("resize", onResize);
+  });
+  ro.observe(container);
+  window.addEventListener("resize", () => {
+    renderer.resize(container.clientWidth, container.clientHeight);
+    renderAll();
+  });
 
   // Subscribe rerender to any state change
   store.subscribe(renderAll);
@@ -279,10 +343,20 @@ async function main() {
     }
   }
 
+  async function announceKingCaptured() {
+    const s = store.get();
+    const winner = s.game.board.bb.w.K === 0n ? "Black" : "White";
+    const choice = await openEndgameModal(`${winner} captures the king — wins!`);
+    if (choice === "newGame") void onNewGame();
+  }
+
   // ---- Boot ----
 
+  // Ensure renderer has correct size before first paint.
+  renderer.resize(container.clientWidth, container.clientHeight);
+
   if (!persisted || initialGame.moveHistory.length === 0) {
-    // Fresh boot: open the new-game modal so the user picks size/depth
+    renderAll();
     void onNewGame();
   } else {
     renderAll();

@@ -76,7 +76,7 @@ export function openNewGameModal(initial: NewGameResult): Promise<NewGameResult 
       <h2>New game</h2>
       <fieldset><legend>Board size</legend><div class="size-grid"></div></fieldset>
       <label>AI <input type="checkbox" ${chosen.aiEnabled ? "checked" : ""} data-ai></label>
-      <label>Depth <input type="range" min="1" max="5" value="${chosen.aiDepth}" data-depth /> <span data-depth-val>${chosen.aiDepth}</span></label>
+      <label>AI level <input type="range" min="1" max="5" value="${chosen.aiDepth}" data-depth /> <span data-depth-val>${chosen.aiDepth}</span></label>
       <label>Theme
         <select data-theme>
           ${["Classic", "Forest", "Midnight", "Grey", "Rosewood"]
@@ -175,9 +175,10 @@ export function openHelpModal(installPrompt: { available: boolean; trigger: () =
         <tr><td>Arrows / Space</td><td>Cursor + commit</td></tr>
         <tr><td>[ / ]</td><td>Step move history</td></tr>
         <tr><td>T / C</td><td>Theme / coords</td></tr>
-        <tr><td>+ / −</td><td>AI depth</td></tr>
+        <tr><td>+ / −</td><td>AI level</td></tr>
         <tr><td>N / R</td><td>New game</td></tr>
-        <tr><td>P</td><td>PGN import/export (8×8)</td></tr>
+        <tr><td>B</td><td>Toggle dice combat mode</td></tr>
+        <tr><td>P</td><td>PGN import/export</td></tr>
         <tr><td>?</td><td>This help</td></tr>
       </table>
       <p class="install-row"></p>
@@ -216,7 +217,7 @@ export function openPGNModal(currentExport: string): Promise<PGNResult> {
   return present<PGNResult>((resolve) => {
     const wrap = document.createElement("div");
     wrap.innerHTML = `
-      <h2>PGN (8×8 only)</h2>
+      <h2>PGN</h2>
       <textarea rows="10" cols="40" data-text></textarea>
       <div class="modal-actions">
         <button type="button" data-cancel>Cancel</button>
